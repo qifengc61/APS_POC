@@ -101,12 +101,11 @@ conda run -n smart-scheduling --cwd frontend npm install
 
 ### 前端权重映射
 
-前端暴露五个用户可配置参数，前端不再有自动派生字段：
+前端暴露四个用户可配置参数：
 
 | 前端显示 | 默认值 | 可选范围 | 对应后端字段 | 映射规则 |
 |---------|--------|---------|------------|---------|
-| 规避加班权重 | 50 | 0~100（每10一档） | `overtime_shift_weight` | 直接等于 |
-| 规避加班天数权重 | 50 | 0~100（每10一档） | `overtime_day_weight` | 直接等于 |
+| 规避加班权重 | 50 | 0~100（每10一档） | `overtime_shift_weight`、`overtime_day_weight` | 同时映射到加班班次和加班天数两个字段 |
 | 规避休息日上班权重 | 50 | 0~100（每10一档） | `rest_day_weight` | 直接等于 |
 | 最大连续工作天数 | 7 | 3~14天（每1天一档） | `max_consecutive_work_days` | 直接等于 |
 | 求解限时 | 10s | 10~60s（每10秒一档） | `max_time_seconds` | 直接等于 |
