@@ -1,0 +1,229 @@
+﻿conda : 
+所在位置 行:1 字符: 5
++ & { conda run -n smart-scheduling python _check_db.py 2>&1 | Out-File ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+# >>>>>>>>>>>>>>>>>>>>>> ERROR REPORT <<<<<<<<<<<<<<<<<<<<<<
+
+    Traceback (most recent call last):
+      File "D:\miniconda3\Lib\site-packages\conda\exception_handler.py", line 3
+0, in __call__
+        return func(*args, **kwargs)
+      File "D:\miniconda3\Lib\site-packages\conda\cli\main.py", line 62, in mai
+n_subshell
+        exit_code = do_call(args, parser)
+      File "D:\miniconda3\Lib\site-packages\conda\cli\conda_argparse.py", line 
+189, in do_call
+        result = getattr(module, func_name)(args, parser)
+      File "D:\miniconda3\Lib\site-packages\conda\cli\main_run.py", line 141, i
+n execute
+        print(response.stdout, file=sys.stdout, end="")
+        ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    UnicodeEncodeError: 'gbk' codec can't encode character '\ufffd' in position
+ 182: illegal multibyte sequence
+
+`$ D:\miniconda3\Scripts\conda-script.py run -n smart-scheduling python _check_
+db.py`
+
+  environment variables:
+                 CIO_TEST=<not set>
+        CONDA_DEFAULT_ENV=base
+                CONDA_EXE=D:\miniconda3\Scripts\conda.exe
+               CONDA_EXES="D:\miniconda3\Scripts\conda.exe"
+             CONDA_PREFIX=D:\miniconda3
+    CONDA_PROMPT_MODIFIER=(base)
+         CONDA_PYTHON_EXE=D:\miniconda3\python.exe
+               CONDA_ROOT=D:\miniconda3
+              CONDA_SHLVL=1
+           CURL_CA_BUNDLE=<not set>
+                 HOMEPATH=\Users\Qifeng Chen
+               LD_PRELOAD=<not set>
+                     PATH=c:\\Users\\Qifeng Chen\\.trae-cn\\tools\\trae-
+                          gopls\\current;c:\\Users\\Qifeng Chen\\.trae-cn\\sdks
+\\workspaces\\0c4
+                          42a05\\versions\\node\\current;c:\\Users\\Qifeng Chen
+\\.trae-cn\\sdks\
+                          \versions\\node\\current;D:\miniconda3;D:\miniconda3\
+Library\mingw-
+                          w64\bin;D:\miniconda3\Library\usr\bin;D:\miniconda3\L
+ibrary\bin;D:\min
+                          iconda3\Scripts;D:\miniconda3\bin;D:\miniconda3\conda
+bin;c:\Users\Qife
+                          ng Chen\.trae-cn\tools\trae-gopls\current;c:\Users\Qi
+feng Chen\.trae-
+                          cn\sdks\workspaces\0c442a05\versions\node\current;c:\
+Users\Qifeng
+                          Chen\.trae-cn\sdks\versions\node\current;C:\WINDOWS\s
+ystem32;C:\WINDOW
+                          S;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\Window
+sPowerShell\v1.0;
+                          C:\WINDOWS\System32\OpenSSH;C:\Program Files\Git\cmd;
+C:\Program
+                          Files\Docker\Docker\resources\bin;d:\Trae CN\bin;C:\U
+sers\Qifeng
+                          Chen\AppData\Local\Microsoft\WindowsApps;D:\Microsoft
+ VS
+                          Code\bin;D:\Qoder\bin
+             PSMODULEPATH=C:\Users\Qifeng Chen\Documents\WindowsPowerShell\Modu
+les;C:\Program Fi
+                          les\WindowsPowerShell\Modules;C:\WINDOWS\system32\Win
+dowsPowerShell\v1
+                          .0\Modules
+            PYTHONSTARTUP=c:\Users\Qifeng Chen\AppData\Roaming\Trae
+                          CN\User\workspaceStorage\0c442a05c25fd8ba53ce7753e3f3
+56d8\ms-
+                          python.python\pythonrc.py
+        PYTHON_BASIC_REPL=1
+       REQUESTS_CA_BUNDLE=<not set>
+     SAFE_RM_ALLOWED_PATH=D:\Desktop\智能排产\智能排产POC;C:\Users\Qifeng Chen\.trae-
+                          cn\memory;C:\Users\Qifeng Chen\AppData\Roaming\Trae C
+N\ModularData\ai-
+                          agent\hooks_env;C:\Users\Qifeng Chen\Library\Caches;C
+:\Users\Qifeng
+                          Chen\.cache;C:\Users\Qifeng Chen\.local\lib;C:\Users\
+Qifeng
+                          Chen\.local\bin;C:\Users\Qifeng Chen\.local\share;C:\
+Users\Qifeng
+                          Chen\go;C:\Users\Qifeng Chen\.gvm;C:\Users\Qifeng
+                          Chen\Library\Application Support\go;C:\Users\Qifeng
+                          Chen\.local\share\go;C:\Users\Qifeng Chen\.m2;C:\User
+s\Qifeng
+                          Chen\.gradle;C:\Users\Qifeng Chen\.sdkman;C:\Users\Qi
+feng
+                          Chen\miniconda3;C:\Users\Qifeng Chen\.conda;C:\Users\
+Qifeng
+                          Chen\.pyenv;C:\Users\Qifeng Chen\Library\Python;C:\Us
+ers\Qifeng
+                          Chen\.npm;C:\Users\Qifeng Chen\Library\pnpm;C:\Users\
+Qifeng
+                          Chen\.fnm;C:\Users\Qifeng Chen\.nvm;C:\Users\Qifeng
+                          Chen\.rustup;C:\Users\Qifeng Chen\.cargo;C:\Users\Qif
+eng
+                          Chen\.cmake;C:\Users\Qifeng Chen\.llvm;C:\Users\Qifen
+g
+                          Chen\.bazel;C:\Users\Qifeng Chen\.gitlog;C:\Users\Qif
+eng
+                          Chen\.docker;C:\Users\Qifeng Chen\Library\Logs;C:\Use
+rs\Qifeng
+                          Chen\fvm;C:\Users\Qifeng Chen\.swiftpm;C:\Users\Qifen
+g
+                          Chen\.android;C:\Users\Qifeng Chen\.oracle_jre_usage;
+C:\Users\Qifeng
+                          Chen\.dart-tool;C:\Users\Qifeng Chen\.pub-cache;C:\Us
+ers\Qifeng
+                          Chen\Library\flutter;C:\Users\Qifeng
+                          Chen\Library\Developer\Xcode;C:\Users\Qifeng
+                          Chen\.yarn;C:\Users\Qifeng Chen\.foundry;C:\Users\Qif
+eng
+                          Chen\.asdf;C:\Users\Qifeng Chen\.jenv;C:\Users\Qifeng
+                          Chen\.gem;C:\Users\Qifeng Chen\.rvm;C:\Users\Qifeng
+                          Chen\.rbenv;C:\Users\Qifeng Chen\.bundle;C:\Users\Qif
+eng
+                          Chen\.dotnet;C:\Users\Qifeng Chen\.nuget;C:\Users\Qif
+eng
+                          Chen\.sbt;C:\Users\Qifeng Chen\.ivy2;C:\Users\Qifeng
+                          Chen\.coursier;C:\Users\Qifeng Chen\.hawtjni;C:\Users
+\Qifeng
+                          Chen\.local\state\pnpm;C:\Users\Qifeng
+                          Chen\.local\state\fnm_multishells;C:\Users\Qifeng
+                          Chen\.webx;C:\Users\Qifeng Chen\.bun;C:\Users\Qifeng
+                          Chen\.bash_history;C:\Users\Qifeng Chen\AppData\Local
+\go-
+                          build;C:\Users\Qifeng Chen\AppData\Local\pip;C:\Users
+\Qifeng
+                          Chen\AppData\Roaming\go;C:\Users\Qifeng
+                          Chen\AppData\Local\conda;C:\Users\Qifeng
+                          Chen\AppData\Local\uv;C:\Users\Qifeng
+                          Chen\AppData\Roaming\uv;C:\Users\Qifeng
+                          Chen\miniforge3;C:\Users\Qifeng Chen\AppData\Local\np
+m-
+                          cache;C:\Users\Qifeng Chen\AppData\Local\pnpm;C:\User
+s\Qifeng
+                          Chen\AppData\Local\Yarn;C:\Users\Qifeng
+                          Chen\AppData\Local\fnm_multishells;C:\Users\Qifeng
+                          Chen\AppData\Local\Microsoft\VSApplicationInsights;C:
+\Users\Qifeng Che
+                          n\AppData\Local\Microsoft\Windows\INetCache;C:\Progra
+mData\Microsoft\N
+                          etFramework\BreadcrumbStore;C:\Users\Qifeng
+                          Chen\AppData\Local\NuGet;C:\Users\Qifeng
+                          Chen\.templateengine;C:\Users\Qifeng Chen\.matplotlib
+;C:\Users\Qifeng
+                          Chen\AppData\Local\Microsoft\PowerShell;C:\Users\Qife
+ng
+                          Chen\AppData\Local\Microsoft\Windows\PowerShell;C:\Us
+ers\Qifeng
+                          Chen\AppData\Roaming\.dart-tool;C:\Users\Qifeng
+                          Chen\AppData\Roaming\.flutter;C:\Users\Qifeng
+                          Chen\AppData\Local\Temp;C:\Users\Qifeng
+                          Chen\AppData\LocalLow\Temp;C:\Users\Qifeng Chen\.Tras
+h;C:\Users\Qifeng
+                          Chen\.lark-cli;C:\Users\Qifeng Chen\Library\Applicati
+on Support\lark-
+                          cli;C:\Users\Qifeng Chen\.devflow-cli;C:\Users\Qifeng
+                          Chen\.aipaas;C:\Users\Qifeng Chen\.bits-ut
+      SAFE_RM_DENIED_PATH=d:\Desktop\智能排产\智能排产POC\.vscode;d:\Desktop\智能排产\智能排产P
+OC\.trae\mcp.json
+                          ;d:\Desktop\智能排产\智能排产POC\.git
+            SSL_CERT_FILE=D:\miniconda3\Library\ssl\cacert.pem
+      TRAE_JWT_TOKEN_PATH=C:\Users\Qifeng Chen\.trae-cn\trae-jwt-token
+    TRAE_SANDBOX_CLI_PATH=d:\Trae CN\resources\app\modules\sandbox\trae-sandbox
+.exe
+TRAE_SANDBOX_SOURCE_FLAG_PATH=c:\Users\Qifeng Chen\AppData\Local\Temp\sandbox-s
+ource-
+                          flag-20a50140-4619-4786-bdec-57905f8c084b
+TRAE_SANDBOX_STORAGE_PATH=C:\Users\Qifeng Chen\AppData\Roaming\Trae CN\ModularD
+ata\ai-
+                          agent\sandbox
+
+     active environment : base
+    active env location : D:\miniconda3
+            shell level : 1
+       user config file : C:\Users\Qifeng Chen\.condarc
+ populated config files : D:\miniconda3\.condarc
+                          D:\miniconda3\condarc.d\anaconda-auth.yml
+          conda version : 26.3.2
+    conda-build version : not installed
+         python version : 3.13.13.final.0
+                 solver : libmamba (default)
+       virtual packages : __archspec=1=x86_64_v4
+                          __conda=26.3.2=0
+                          __win=10.0.26200=0
+       base environment : D:\miniconda3  (writable)
+      conda av data dir : D:\miniconda3\etc\conda
+  conda av metadata url : None
+           channel URLs : https://repo.anaconda.com/pkgs/main/win-64
+                          https://repo.anaconda.com/pkgs/main/noarch
+                          https://repo.anaconda.com/pkgs/r/win-64
+                          https://repo.anaconda.com/pkgs/r/noarch
+                          https://repo.anaconda.com/pkgs/msys2/win-64
+                          https://repo.anaconda.com/pkgs/msys2/noarch
+          package cache : D:\miniconda3\pkgs
+                          C:\Users\Qifeng Chen\.conda\pkgs
+                          C:\Users\Qifeng Chen\AppData\Local\conda\conda\pkgs
+       envs directories : D:\miniconda3\envs
+                          C:\Users\Qifeng Chen\.conda\envs
+                          C:\Users\Qifeng Chen\AppData\Local\conda\conda\envs
+    temporary directory : C:\Users\QIFENG~1\AppData\Local\Temp
+               platform : win-64
+             user-agent : conda/26.3.2 requests/2.33.1 CPython/3.13.13 Windows/
+11 Windows/10.0.26200 solver/libmamba conda-libmamba-solver/26.4.0 libmambapy/2
+.3.2 aau/0.7.6 c/. s/. e/.
+          administrator : False
+             netrc file : None
+           offline mode : False
+
+
+An unexpected error has occurred. Conda has prepared the above report.
+If you suspect this error is being caused by a malfunctioning plugin,
+consider using the --no-plugins option to turn off plugins.
+
+Example: conda --no-plugins install <package>
+
+Alternatively, you can set the CONDA_NO_PLUGINS environment variable on
+the command line to run the command without plugins enabled.
+
+Example: CONDA_NO_PLUGINS=true conda install <package>
+

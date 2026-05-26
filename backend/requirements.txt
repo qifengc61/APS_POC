@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy
+alembic
+pymysql
+cryptography
+pydantic
+pydantic-settings
+ortools
+chinese-calendar
+openpyxl
