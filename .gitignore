@@ -34,3 +34,15 @@ Thumbs.db
 
 # Build outputs
 *.egg-info/
+
+# Logs
+logs/
+*.log
+
+# Excel files
+*.xlsx
+*.xls
+!导出模板.xlsx
+
+# Trae config
+.trae/
