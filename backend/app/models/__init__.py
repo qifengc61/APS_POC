@@ -1,3 +1,17 @@
-from .schemas import SchedulingParams, AlgorithmConfig, DailyResult, SchedulingResult
+from .schemas import (
+    ProductParams,
+    SchedulingParams,
+    AlgorithmConfig,
+    SchedulingRequest,
+    DailyResult,
+    SchedulingResult,
+)
 
-__all__ = ["SchedulingParams", "AlgorithmConfig", "DailyResult", "SchedulingResult"]
+__all__ = [
+    "ProductParams",
+    "SchedulingParams",
+    "AlgorithmConfig",
+    "SchedulingRequest",
+    "DailyResult",
+    "SchedulingResult",
+]

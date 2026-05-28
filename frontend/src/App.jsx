@@ -1,191 +1,89 @@
-import { useState, useEffect, useRef } from 'react'
-import ParameterForm from './components/ParameterForm'
-import ResultTable from './components/ResultTable'
-import ResultCharts from './components/ResultCharts'
-import { calculateSchedule } from './api/api'
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
+import MaterialManagementPage from './pages/MaterialManagement'
+import LineManagementPage from './pages/LineManagement'
+import DeliveryPlanPage from './pages/DeliveryPlan'
+import SchedulingPage from './pages/Scheduling'
 import './App.css'
 
-function App() {
-  const [result, setResult] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [safetyStock, setSafetyStock] = useState(100)
-  const [debugMode, setDebugMode] = useState(false)
-  const [dots, setDots] = useState('')
-  const timerRef = useRef(null)
+const navItems = [
+  { path: '/materials', label: '物料管理', icon: '📦', color: '#3b82f6' },
+  { path: '/lines', label: '产线管理', icon: '🏭', color: '#059669' },
+  { path: '/delivery-plans', label: '交货计划', icon: '📋', color: '#7c3aed' },
+  { path: '/', label: '排产计算', icon: '🚀', color: '#f59e0b' },
+]
 
-  useEffect(() => {
-    if (loading) {
-      timerRef.current = setInterval(() => {
-        setDots(prev => prev.length >= 6 ? '' : prev + '.')
-      }, 500)
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current)
-      setDots('')
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [loading])
-
-  const handleCalculate = async (params, config) => {
-    setLoading(true)
-    setError(null)
-    setResult(null)
-    setSafetyStock(params.safety_stock)
-
-    try {
-      const data = await calculateSchedule(params, config)
-      if (data.success) {
-        setResult(data)
-      } else {
-        setError(data.message || '排产计算失败')
-      }
-    } catch (err) {
-      const msg = err.response?.data?.detail || err.message || '排产计算异常'
-      setError(msg)
-    } finally {
-      setLoading(false)
-    }
-  }
-
+function Sidebar() {
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f0f2f5' }}>
-      <header style={{
-        backgroundColor: '#1e40af',
-        color: '#fff',
-        padding: '16px 32px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+    <div style={{
+      width: '200px', minHeight: '100vh', backgroundColor: '#1e293b',
+      display: 'flex', flexDirection: 'column', flexShrink: 0,
+    }}>
+      <div style={{
+        padding: '20px 16px 16px', borderBottom: '1px solid #334155',
+        display: 'flex', alignItems: 'center', gap: '10px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '24px' }}>🏭</span>
-          <div>
-            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: '700' }}>智能排产系统</h1>
-            <p style={{ margin: 0, fontSize: '12px', opacity: 0.8 }}>基于 Google OR-Tools CP-SAT 约束优化</p>
-          </div>
+        <span style={{ fontSize: '24px' }}>🏭</span>
+        <div>
+          <div style={{ color: '#f1f5f9', fontSize: '15px', fontWeight: '700' }}>智能排产</div>
+          <div style={{ color: '#64748b', fontSize: '11px' }}>V2.0</div>
         </div>
-        <span style={{ fontSize: '12px', opacity: 0.6 }}>V1.0</span>
-        <span
-          onClick={() => setDebugMode(!debugMode)}
-          style={{
-            fontSize: '12px',
-            opacity: debugMode ? 1 : 0.4,
-            cursor: 'pointer',
-            marginLeft: '12px',
-            padding: '2px 8px',
-            borderRadius: '4px',
-            border: debugMode ? '1px solid rgba(255,255,255,0.6)' : '1px solid transparent',
-            backgroundColor: debugMode ? 'rgba(255,255,255,0.15)' : 'transparent',
-            transition: 'all 0.2s',
-            userSelect: 'none',
-          }}
-        >
-          🛠 {debugMode ? '调试' : '调试'}
-        </span>
-      </header>
+      </div>
 
-      <main style={{ maxWidth: '1400px', margin: '0 auto', padding: '20px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '20px', alignItems: 'start' }}>
-          <div>
-            <ParameterForm
-              onCalculate={handleCalculate}
-              loading={loading}
-            />
-          </div>
+      <nav style={{ padding: '12px 8px', flex: 1 }}>
+        {navItems.map(item => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            end={item.path === '/'}
+            style={({ isActive }) => ({
+              display: 'flex', alignItems: 'center', gap: '10px',
+              padding: '10px 12px', borderRadius: '8px',
+              color: isActive ? '#f1f5f9' : '#94a3b8',
+              backgroundColor: isActive ? '#334155' : 'transparent',
+              textDecoration: 'none', fontSize: '14px', fontWeight: isActive ? '600' : '400',
+              transition: 'all 0.2s', marginBottom: '4px',
+              borderLeft: isActive ? `3px solid ${item.color}` : '3px solid transparent',
+            })}
+          >
+            <span style={{ fontSize: '16px' }}>{item.icon}</span>
+            <span>{item.label}</span>
+          </NavLink>
+        ))}
+      </nav>
 
-          <div>
-            {error && (
-              <div style={{
-                padding: '12px 16px',
-                backgroundColor: '#fef2f2',
-                border: '1px solid #fecaca',
-                borderRadius: '8px',
-                color: '#dc2626',
-                fontSize: '14px',
-                marginBottom: '16px',
-              }}>
-                ❌ {error}
-              </div>
-            )}
-
-            {loading && (
-              <div style={{
-                padding: '40px',
-                textAlign: 'center',
-                backgroundColor: '#fff',
-                borderRadius: '10px',
-                border: '1px solid #e5e7eb',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-              }}>
-                <div style={{ fontSize: '32px', marginBottom: '12px' }}>⏳</div>
-                <div style={{ fontSize: '16px', color: '#6b7280', display: 'flex', justifyContent: 'center' }}>
-                  <span>正在计算排产方案{dots}</span>
-                </div>
-                <div style={{ fontSize: '13px', color: '#9ca3af', marginTop: '8px' }}>OR-Tools CP-SAT 约束求解器优化中</div>
-              </div>
-            )}
-
-            {!loading && !result && !error && (
-              <div style={{
-                padding: '60px 40px',
-                textAlign: 'center',
-                backgroundColor: '#fff',
-                borderRadius: '10px',
-                border: '1px solid #e5e7eb',
-              }}>
-                <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
-                <div style={{ fontSize: '18px', color: '#6b7280', marginBottom: '8px' }}>请配置参数并开始排产</div>
-                <div style={{ fontSize: '13px', color: '#9ca3af' }}>填写左侧参数后点击"开始排产"按钮</div>
-              </div>
-            )}
-
-            {result && !loading && (
-              <>
-                {debugMode && result.solver_status !== undefined && (
-                  <div style={{
-                    padding: '10px 16px',
-                    backgroundColor: '#1e293b',
-                    borderRadius: '8px',
-                    marginBottom: '16px',
-                    display: 'flex',
-                    gap: '24px',
-                    alignItems: 'center',
-                    fontFamily: 'monospace',
-                    fontSize: '13px',
-                  }}>
-                    <span style={{ color: '#94a3b8' }}>🔍 求解器状态:</span>
-                    <span style={{
-                      color: result.solver_status === 'OPTIMAL' ? '#4ade80' : '#fbbf24',
-                      fontWeight: '600',
-                    }}>
-                      {result.solver_status}
-                    </span>
-                    <span style={{ color: '#94a3b8' }}>⏱ 耗时:</span>
-                    <span style={{ color: '#38bdf8', fontWeight: '600' }}>
-                      {result.solve_time}s
-                    </span>
-                  </div>
-                )}
-                <ResultTable result={result} />
-                <ResultCharts result={result} safetyStock={safetyStock} />
-              </>
-            )}
-          </div>
-        </div>
-      </main>
-
-      <footer style={{
-        textAlign: 'center',
-        padding: '16px',
-        color: '#9ca3af',
-        fontSize: '12px',
+      <div style={{
+        padding: '12px 16px', borderTop: '1px solid #334155',
+        color: '#475569', fontSize: '11px', textAlign: 'center',
       }}>
-        智能排产系统 © 2026 | Google OR-Tools CP-SAT 约束优化引擎
-      </footer>
+        OR-Tools CP-SAT 引擎
+      </div>
     </div>
+  )
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f0f2f5' }}>
+        <Sidebar />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+          <main style={{ flex: 1, padding: '20px 24px', maxWidth: '1400px', width: '100%', margin: '0 auto' }}>
+            <Routes>
+              <Route path="/" element={<SchedulingPage />} />
+              <Route path="/materials" element={<MaterialManagementPage />} />
+              <Route path="/lines" element={<LineManagementPage />} />
+              <Route path="/delivery-plans" element={<DeliveryPlanPage />} />
+            </Routes>
+          </main>
+          <footer style={{
+            textAlign: 'center', padding: '12px', color: '#9ca3af', fontSize: '12px',
+            borderTop: '1px solid #e5e7eb', backgroundColor: '#fff',
+          }}>
+            智能排产系统 V2.0 © 2026 | OR-Tools CP-SAT 约束优化引擎
+          </footer>
+        </div>
+      </div>
+    </BrowserRouter>
   )
 }
 

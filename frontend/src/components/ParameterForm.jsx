@@ -1,27 +1,90 @@
 import { useState } from 'react'
 import dayjs from 'dayjs'
 
-const defaultParams = {
+const defaultProduct = {
   initial_inventory: 500,
   safety_stock: 100,
   rated_output: 200,
   total_delivery: 5000,
+}
+
+const defaultParams = {
+  product_1: { ...defaultProduct },
+  product_2: {
+    initial_inventory: 300,
+    safety_stock: 50,
+    rated_output: 150,
+    total_delivery: 3000,
+  },
   start_date: dayjs().format('YYYY-MM-DD'),
   end_date: dayjs().add(29, 'day').format('YYYY-MM-DD'),
   holidays: [],
 }
 
 const defaultConfig = {
-  avoid_overtime_weight: 50,
   avoid_rest_work_weight: 50,
   max_consecutive_work_days: 7,
   max_time_seconds: 10,
+}
+
+function ProductFields({ label, color, params, onChange }) {
+  const inputStyle = {
+    width: '100%',
+    padding: '8px 12px',
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+    boxSizing: 'border-box',
+  }
+  const labelStyle = {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: '4px',
+  }
+  const fields = [
+    { key: 'initial_inventory', label: '初期库存' },
+    { key: 'safety_stock', label: '安全库存' },
+    { key: 'rated_output', label: '单班额定产量' },
+    { key: 'total_delivery', label: '计划总交货量' },
+  ]
+
+  return (
+    <div style={{ padding: '12px', backgroundColor: `${color}08`, borderRadius: '8px', border: `1px solid ${color}30` }}>
+      <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color, fontWeight: '700' }}>{label}</h4>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+        {fields.map(f => (
+          <div key={f.key}>
+            <label style={{ ...labelStyle, fontSize: '12px' }}>{f.label}</label>
+            <input
+              type="number"
+              style={inputStyle}
+              value={params[f.key]}
+              onChange={e => onChange(f.key, parseFloat(e.target.value))}
+              min="0"
+              step="1"
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export default function ParameterForm({ onCalculate, loading }) {
   const [params, setParams] = useState(defaultParams)
   const [config, setConfig] = useState(defaultConfig)
   const [showConfig, setShowConfig] = useState(false)
+
+  const handleProductChange = (product, key, value) => {
+    setParams(prev => ({
+      ...prev,
+      [product]: { ...prev[product], [key]: value },
+    }))
+  }
 
   const handleParamChange = (key, value) => {
     setParams(prev => ({ ...prev, [key]: value }))
@@ -36,16 +99,11 @@ export default function ParameterForm({ onCalculate, loading }) {
     setConfig(defaultConfig)
   }
 
-  const buildApiConfig = () => {
-    const avoidOvertime = config.avoid_overtime_weight
-    return {
-      overtime_shift_weight: avoidOvertime,
-      overtime_day_weight: avoidOvertime,
-      rest_day_weight: config.avoid_rest_work_weight,
-      max_consecutive_work_days: config.max_consecutive_work_days,
-      max_time_seconds: config.max_time_seconds,
-    }
-  }
+  const buildApiConfig = () => ({
+    rest_day_weight: config.avoid_rest_work_weight,
+    max_consecutive_work_days: config.max_consecutive_work_days,
+    max_time_seconds: config.max_time_seconds,
+  })
 
   const handleCalculate = () => {
     onCalculate(params, buildApiConfig())
@@ -73,54 +131,29 @@ export default function ParameterForm({ onCalculate, loading }) {
   return (
     <div style={{ padding: '20px', backgroundColor: '#fff', borderRadius: '10px', border: '1px solid #e5e7eb' }}>
       <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: '#1f2937', borderBottom: '2px solid #3b82f6', paddingBottom: '8px' }}>
-        📋 基础参数配置
+        📋 双物品排产参数
       </h3>
 
+      <ProductFields
+        label="物品 1"
+        color="#2563eb"
+        params={params.product_1}
+        onChange={(k, v) => handleProductChange('product_1', k, v)}
+      />
+
+      <div style={{ margin: '16px 0' }} />
+
+      <ProductFields
+        label="物品 2"
+        color="#059669"
+        params={params.product_2}
+        onChange={(k, v) => handleProductChange('product_2', k, v)}
+      />
+
+      <div style={{ margin: '16px 0', borderTop: '1px solid #e5e7eb' }} />
+
+      <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#374151', fontWeight: '600' }}>📅 共享排产日期</h4>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-        <div>
-          <label style={labelStyle}>初期库存</label>
-          <input
-            type="number"
-            style={inputStyle}
-            value={params.initial_inventory}
-            onChange={e => handleParamChange('initial_inventory', parseFloat(e.target.value))}
-            min="0"
-            step="1"
-          />
-        </div>
-        <div>
-          <label style={labelStyle}>安全库存</label>
-          <input
-            type="number"
-            style={inputStyle}
-            value={params.safety_stock}
-            onChange={e => handleParamChange('safety_stock', parseFloat(e.target.value))}
-            min="0"
-            step="1"
-          />
-        </div>
-        <div>
-          <label style={labelStyle}>单班额定产量</label>
-          <input
-            type="number"
-            style={inputStyle}
-            value={params.rated_output}
-            onChange={e => handleParamChange('rated_output', parseFloat(e.target.value))}
-            min="0"
-            step="1"
-          />
-        </div>
-        <div>
-          <label style={labelStyle}>计划总交货量</label>
-          <input
-            type="number"
-            style={inputStyle}
-            value={params.total_delivery}
-            onChange={e => handleParamChange('total_delivery', parseFloat(e.target.value))}
-            min="0"
-            step="1"
-          />
-        </div>
         <div>
           <label style={labelStyle}>排产开始日期</label>
           <input
@@ -158,58 +191,30 @@ export default function ParameterForm({ onCalculate, loading }) {
 
         {showConfig && (
           <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '8px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <label style={{ ...labelStyle, fontSize: '12px', marginBottom: 0 }}>规避加班权重</label>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#3b82f6' }}>{config.avoid_overtime_weight}</span>
-                </div>
-                <div style={{ height: '28px', display: 'flex', alignItems: 'center' }}>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={10}
-                    value={config.avoid_overtime_weight}
-                    onChange={e => handleConfigChange('avoid_overtime_weight', e.target.value)}
-                    style={{
-                      width: '100%',
-                      height: '6px',
-                      appearance: 'none',
-                      WebkitAppearance: 'none',
-                      background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(config.avoid_overtime_weight / 100) * 100}%, #e5e7eb ${(config.avoid_overtime_weight / 100) * 100}%, #e5e7eb 100%)`,
-                      borderRadius: '3px',
-                      outline: 'none',
-                      cursor: 'pointer',
-                    }}
-                  />
-                </div>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <label style={{ ...labelStyle, fontSize: '12px', marginBottom: 0 }}>规避休息日上班权重</label>
+                <span style={{ fontSize: '13px', fontWeight: '600', color: '#3b82f6' }}>{config.avoid_rest_work_weight}</span>
               </div>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <label style={{ ...labelStyle, fontSize: '12px', marginBottom: 0 }}>规避休息日上班权重</label>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#3b82f6' }}>{config.avoid_rest_work_weight}</span>
-                </div>
-                <div style={{ height: '28px', display: 'flex', alignItems: 'center' }}>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={10}
-                    value={config.avoid_rest_work_weight}
-                    onChange={e => handleConfigChange('avoid_rest_work_weight', e.target.value)}
-                    style={{
-                      width: '100%',
-                      height: '6px',
-                      appearance: 'none',
-                      WebkitAppearance: 'none',
-                      background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(config.avoid_rest_work_weight / 100) * 100}%, #e5e7eb ${(config.avoid_rest_work_weight / 100) * 100}%, #e5e7eb 100%)`,
-                      borderRadius: '3px',
-                      outline: 'none',
-                      cursor: 'pointer',
-                    }}
-                  />
-                </div>
+              <div style={{ height: '28px', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={10}
+                  value={config.avoid_rest_work_weight}
+                  onChange={e => handleConfigChange('avoid_rest_work_weight', e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: '6px',
+                    appearance: 'none',
+                    WebkitAppearance: 'none',
+                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(config.avoid_rest_work_weight / 100) * 100}%, #e5e7eb ${(config.avoid_rest_work_weight / 100) * 100}%, #e5e7eb 100%)`,
+                    borderRadius: '3px',
+                    outline: 'none',
+                    cursor: 'pointer',
+                  }}
+                />
               </div>
             </div>
             <div style={{ marginTop: '14px' }}>

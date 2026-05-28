@@ -4,9 +4,10 @@ from datetime import date, timedelta
 from typing import List, Optional
 from ortools.sat.python import cp_model
 import chinese_calendar
+from ..models.schemas import ProductParams
 
 
-class ORToolsScheduler:
+class TwoProductScheduler:
     COMBO_DOMAIN = [0, 1, 2, 3, 4, 5]
     COMBOS = {
         0: (0, 0),
@@ -24,42 +25,38 @@ class ORToolsScheduler:
         4: "1.5班+1班",
         5: "1.5班+1.5班",
     }
-    WORKDAY_OT = {0: 0, 1: 0, 2: 0, 3: 0, 4: 1, 5: 2}
-    RESTDAY_OT = {0: 0, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6}
-    WORKDAY_HAS_OT = {0: False, 1: False, 2: False, 3: False, 4: True, 5: True}
-    RESTDAY_HAS_OT = {0: False, 1: True, 2: True, 3: True, 4: True, 5: True}
-    MAX_DAILY_TOTAL = 3.0
+    SHIFT_TOTALS = [0, 1.0, 1.5, 2.0, 2.5, 3.0]
+    MAX_DAILY_SHIFTS = 3.0
 
     def __init__(
         self,
-        initial_inventory: float,
-        safety_stock: float,
-        rated_output: float,
-        total_delivery: float,
+        product_1: ProductParams,
+        product_2: ProductParams,
         start_date: date,
         end_date: date,
         holidays: List[date],
-        daily_deliveries: Optional[List[dict]] = None,
         max_time_seconds: int = 10,
-        overtime_shift_weight: float = 10.0,
-        overtime_day_weight: float = 5.0,
-        rest_day_weight: float = 20.0,
+        rest_day_weight: float = 50.0,
         max_consecutive_work_days: int = 7,
         **kwargs,
     ):
-        self.initial_inventory = initial_inventory
-        self.safety_stock = safety_stock
-        self.rated_output = rated_output
-        self.total_delivery = total_delivery
+        self.initial_inventory_1 = product_1.initial_inventory
+        self.safety_stock_1 = product_1.safety_stock
+        self.rated_output_1 = product_1.rated_output
+        self.total_delivery_1 = product_1.total_delivery
+        self.daily_deliveries_1 = product_1.daily_deliveries or []
+
+        self.initial_inventory_2 = product_2.initial_inventory
+        self.safety_stock_2 = product_2.safety_stock
+        self.rated_output_2 = product_2.rated_output
+        self.total_delivery_2 = product_2.total_delivery
+        self.daily_deliveries_2 = product_2.daily_deliveries or []
+
         self.start_date = start_date
         self.end_date = end_date
         self.holidays = set(holidays)
-        self.daily_deliveries = daily_deliveries or []
         self.max_time_seconds = max_time_seconds
         self.scale = 2
-        OT_NORMALIZE = 6
-        self.overtime_shift_weight = int(overtime_shift_weight * self.scale / OT_NORMALIZE)
-        self.overtime_day_weight = int(overtime_day_weight * self.scale / OT_NORMALIZE)
         self.rest_day_weight = int(rest_day_weight * self.scale)
         self.max_consecutive_work_days = max_consecutive_work_days
 
@@ -83,40 +80,61 @@ class ORToolsScheduler:
             for i in range(self.days)
         ]
 
-        self.delivery_map = {}
-        for dd in self.daily_deliveries:
+        self.delivery_map_1 = {}
+        for dd in self.daily_deliveries_1:
             d = dd["date"] if isinstance(dd["date"], date) else date.fromisoformat(str(dd["date"]))
-            self.delivery_map[d] = int(dd["quantity"])
+            self.delivery_map_1[d] = int(dd["quantity"])
 
-        self._daily_delivery_list = self._compute_daily_deliveries()
+        self.delivery_map_2 = {}
+        for dd in self.daily_deliveries_2:
+            d = dd["date"] if isinstance(dd["date"], date) else date.fromisoformat(str(dd["date"]))
+            self.delivery_map_2[d] = int(dd["quantity"])
+
+        self._daily_delivery_list_1 = self._compute_daily_deliveries(self.total_delivery_1, self.delivery_map_1)
+        self._daily_delivery_list_2 = self._compute_daily_deliveries(self.total_delivery_2, self.delivery_map_2)
 
         self._validate_feasibility()
 
     def _validate_feasibility(self):
         n = self.max_consecutive_work_days
         max_work_days = self.days // (n + 1) * n + min(self.days % (n + 1), n)
-        max_possible = max_work_days * self.MAX_DAILY_TOTAL * self.rated_output
-        net_demand = self.total_delivery - self.initial_inventory + self.safety_stock
-        if net_demand > 0 and max_possible < net_demand:
+
+        for label, rated, init, saf, total in [
+            ("物品1", self.rated_output_1, self.initial_inventory_1, self.safety_stock_1, self.total_delivery_1),
+            ("物品2", self.rated_output_2, self.initial_inventory_2, self.safety_stock_2, self.total_delivery_2),
+        ]:
+            max_possible = max_work_days * self.MAX_DAILY_SHIFTS * rated
+            net_demand = total - init + saf
+            if net_demand > 0 and max_possible < net_demand:
+                raise ValueError(
+                    f"{label}：即使在最大连续工作{n}天的约束下，产能极限仍无法满足净需求。"
+                    f"最大可排产天数{max_work_days}天（共{self.days}天），"
+                    f"最大产能{max_possible:.0f}，净需求{net_demand}"
+                )
+
+        total_max = max_work_days * self.MAX_DAILY_SHIFTS * (self.rated_output_1 + self.rated_output_2)
+        total_net = (
+            max(0, self.total_delivery_1 - self.initial_inventory_1 + self.safety_stock_1)
+            + max(0, self.total_delivery_2 - self.initial_inventory_2 + self.safety_stock_2)
+        )
+        if total_net > total_max:
             raise ValueError(
-                f"即使在最大连续工作{n}天的约束下，产能极限仍无法满足净需求。"
-                f"最大可排产天数{max_work_days}天（共{self.days}天），"
-                f"最大产能{max_possible:.0f}，净需求{net_demand}"
+                f"两个物品合计净需求{total_net}超过总产能极限{total_max:.0f}"
             )
 
-    def _compute_daily_deliveries(self) -> list:
+    def _compute_daily_deliveries(self, total_delivery: float, delivery_map: dict) -> list:
         result = []
         for i in range(self.days):
             d = self.dates[i]
-            if d in self.delivery_map:
-                result.append(self.delivery_map[d])
+            if d in delivery_map:
+                result.append(delivery_map[d])
             else:
                 result.append(None)
 
         uniform_indices = [i for i, v in enumerate(result) if v is None]
         if uniform_indices:
             total_assigned = sum(v for v in result if v is not None)
-            remaining = int(self.total_delivery) - total_assigned
+            remaining = int(total_delivery) - total_assigned
             n = len(uniform_indices)
             base = remaining // n
             extra = remaining % n
@@ -125,94 +143,81 @@ class ORToolsScheduler:
 
         return result
 
-    def _get_daily_delivery(self, day_idx: int) -> int:
-        return self._daily_delivery_list[day_idx]
+    def _get_daily_delivery(self, day_idx: int, product: str) -> int:
+        if product == "1":
+            return self._daily_delivery_list_1[day_idx]
+        return self._daily_delivery_list_2[day_idx]
 
     def _build_model(self):
         model = cp_model.CpModel()
         S = self.scale
-        max_prod = int(self.MAX_DAILY_TOTAL * self.rated_output * S)
 
-        prod_table = [int((self.COMBOS[cv][0] + self.COMBOS[cv][1]) * self.rated_output * S) for cv in self.COMBO_DOMAIN]
+        max_prod_1 = int(self.MAX_DAILY_SHIFTS * self.rated_output_1 * S)
+        max_prod_2 = int(self.MAX_DAILY_SHIFTS * self.rated_output_2 * S)
 
-        combo_vars = []
-        for i in range(self.days):
-            var = model.NewIntVarFromDomain(
-                cp_model.Domain.FromValues(self.COMBO_DOMAIN), f"combo_{i}"
-            )
-            combo_vars.append(var)
+        prod_table_1 = [
+            int((self.COMBOS[cv][0] + self.COMBOS[cv][1]) * self.rated_output_1 * S)
+            for cv in self.COMBO_DOMAIN
+        ]
+        prod_table_2 = [
+            int((self.COMBOS[cv][0] + self.COMBOS[cv][1]) * self.rated_output_2 * S)
+            for cv in self.COMBO_DOMAIN
+        ]
 
-        production_vars = []
-        overtime_count_vars = []
-        overtime_day_vars = []
-        rest_occupied_vars = []
-        for i in range(self.days):
-            prod = model.NewIntVar(0, max_prod, f"prod_{i}")
-            model.AddElement(combo_vars[i], prod_table, prod)
-            production_vars.append(prod)
+        shift_table = [int(st * S) for st in self.SHIFT_TOTALS]
+        max_shift_scaled = int(self.MAX_DAILY_SHIFTS * S)
 
-            if self.rest_flags[i]:
-                ot_table = [self.RESTDAY_OT[cv] for cv in self.COMBO_DOMAIN]
-                has_ot_table = [1 if self.RESTDAY_HAS_OT[cv] else 0 for cv in self.COMBO_DOMAIN]
-                rest_occ_table = [0 if cv == 0 else 1 for cv in self.COMBO_DOMAIN]
-            else:
-                ot_table = [self.WORKDAY_OT[cv] for cv in self.COMBO_DOMAIN]
-                has_ot_table = [1 if self.WORKDAY_HAS_OT[cv] else 0 for cv in self.COMBO_DOMAIN]
-                rest_occ_table = [0 for _ in self.COMBO_DOMAIN]
-
-            ot_count = model.NewIntVar(0, 6, f"ot_count_{i}")
-            model.AddElement(combo_vars[i], ot_table, ot_count)
-            overtime_count_vars.append(ot_count)
-
-            ot_day = model.NewBoolVar(f"ot_day_{i}")
-            model.AddElement(combo_vars[i], has_ot_table, ot_day)
-            overtime_day_vars.append(ot_day)
-
-            rest_occupied = model.NewBoolVar(f"rest_occupied_{i}")
-            model.AddElement(combo_vars[i], rest_occ_table, rest_occupied)
-            rest_occupied_vars.append(rest_occupied)
-
-        cumulative_delivery = 0
-        inventory_vars = []
-        for i in range(self.days):
-            cumulative_delivery += self._get_daily_delivery(i)
-            inv_ub = int(self.initial_inventory * S) + (i + 1) * max_prod - int(cumulative_delivery * S)
-            inv_lb = int(self.safety_stock * S)
-            inv = model.NewIntVar(inv_lb, inv_ub, f"inv_{i}")
-            inventory_vars.append(inv)
-
-        for i in range(self.days):
-            daily_delivery_scaled = int(self._get_daily_delivery(i) * S)
-            if i == 0:
-                model.Add(
-                    inventory_vars[i]
-                    == int(self.initial_inventory * S) + production_vars[i] - daily_delivery_scaled
-                )
-            else:
-                model.Add(
-                    inventory_vars[i]
-                    == inventory_vars[i - 1] + production_vars[i] - daily_delivery_scaled
-                )
-
-        for i in range(self.days):
-            model.Add(inventory_vars[i] >= int(self.safety_stock * S))
-
-        final_inventory = inventory_vars[-1]
-        final_inv_ub = int(self.initial_inventory * S) + self.days * max_prod - int(cumulative_delivery * S)
-        final_excess_ub = final_inv_ub - int(self.safety_stock * S)
-        final_excess = model.NewIntVar(0, final_excess_ub, "final_excess")
-        model.Add(final_excess == final_inventory - int(self.safety_stock * S))
-
-        total_overtime_shifts = sum(overtime_count_vars)
-        total_overtime_days = sum(overtime_day_vars)
-        total_rest_occupied = sum(rest_occupied_vars)
-
+        combo_1_vars = []
+        combo_2_vars = []
+        production_1_vars = []
+        production_2_vars = []
         is_work_day = []
+
         for i in range(self.days):
+            c1 = model.NewIntVarFromDomain(
+                cp_model.Domain.FromValues(self.COMBO_DOMAIN), f"combo_1_{i}"
+            )
+            c2 = model.NewIntVarFromDomain(
+                cp_model.Domain.FromValues(self.COMBO_DOMAIN), f"combo_2_{i}"
+            )
+            combo_1_vars.append(c1)
+            combo_2_vars.append(c2)
+
+            p1 = model.NewIntVar(0, max_prod_1, f"prod_1_{i}")
+            p2 = model.NewIntVar(0, max_prod_2, f"prod_2_{i}")
+            model.AddElement(c1, prod_table_1, p1)
+            model.AddElement(c2, prod_table_2, p2)
+            production_1_vars.append(p1)
+            production_2_vars.append(p2)
+
+            s1 = model.NewIntVar(0, max_shift_scaled, f"shift_1_{i}")
+            s2 = model.NewIntVar(0, max_shift_scaled, f"shift_2_{i}")
+            model.AddElement(c1, shift_table, s1)
+            model.AddElement(c2, shift_table, s2)
+            model.Add(s1 + s2 <= max_shift_scaled)
+
             w = model.NewBoolVar(f"is_work_{i}")
-            model.Add(combo_vars[i] == 0).OnlyEnforceIf(w.Not())
-            model.Add(combo_vars[i] > 0).OnlyEnforceIf(w)
+            model.Add(c1 + c2 == 0).OnlyEnforceIf(w.Not())
+            model.Add(c1 + c2 > 0).OnlyEnforceIf(w)
             is_work_day.append(w)
+
+        inventory_1_vars = self._build_inventory(
+            model, production_1_vars, "1", self.initial_inventory_1, self.safety_stock_1, max_prod_1
+        )
+        inventory_2_vars = self._build_inventory(
+            model, production_2_vars, "2", self.initial_inventory_2, self.safety_stock_2, max_prod_2
+        )
+
+        cumulative_delivery_1 = sum(self._get_daily_delivery(i, "1") for i in range(self.days))
+        cumulative_delivery_2 = sum(self._get_daily_delivery(i, "2") for i in range(self.days))
+        final_inv_ub_1 = int(self.initial_inventory_1 * S) + self.days * max_prod_1 - int(cumulative_delivery_1 * S)
+        final_inv_ub_2 = int(self.initial_inventory_2 * S) + self.days * max_prod_2 - int(cumulative_delivery_2 * S)
+
+        final_excess_1 = model.NewIntVar(0, final_inv_ub_1 - int(self.safety_stock_1 * S), "final_excess_1")
+        model.Add(final_excess_1 == inventory_1_vars[-1] - int(self.safety_stock_1 * S))
+
+        final_excess_2 = model.NewIntVar(0, final_inv_ub_2 - int(self.safety_stock_2 * S), "final_excess_2")
+        model.Add(final_excess_2 == inventory_2_vars[-1] - int(self.safety_stock_2 * S))
 
         n = self.max_consecutive_work_days
         for i in range(self.days - n):
@@ -229,31 +234,63 @@ class ORToolsScheduler:
                 consecutive_window_vars.append(all_work)
         total_consecutive_penalty = sum(consecutive_window_vars)
 
-        smoothness_vars = []
-        for i in range(self.days - 1):
-            diff = model.NewIntVar(-5, 5, f"combo_diff_{i}")
-            model.Add(diff == combo_vars[i + 1] - combo_vars[i])
-            abs_diff = model.NewIntVar(0, 5, f"combo_abs_diff_{i}")
-            model.AddAbsEquality(abs_diff, diff)
-            smoothness_vars.append(abs_diff)
-        total_smoothness = sum(smoothness_vars)
+        fixed_rest_occupied = []
+        for i in range(self.days):
+            if self.rest_flags[i]:
+                fixed_rest_occupied.append(is_work_day[i])
+        total_rest_occupied = sum(fixed_rest_occupied)
+
+        smoothness_1 = self._build_smoothness(model, combo_1_vars, "1")
+        smoothness_2 = self._build_smoothness(model, combo_2_vars, "2")
+        total_smoothness = smoothness_1 + smoothness_2
 
         overproduction_weight = 1
         smoothness_weight = 5
         consecutive_weight = 60
         primary_obj = (
-            overproduction_weight * final_excess
-            + self.overtime_shift_weight * total_overtime_shifts
-            + self.overtime_day_weight * total_overtime_days
+            overproduction_weight * (final_excess_1 + final_excess_2)
             + self.rest_day_weight * total_rest_occupied
             + smoothness_weight * total_smoothness
             + consecutive_weight * total_consecutive_penalty
         )
 
-        return model, combo_vars, primary_obj
+        return model, combo_1_vars, combo_2_vars, primary_obj
+
+    def _build_inventory(self, model, prod_vars, label, initial_inv, safety_stock, max_prod):
+        S = self.scale
+        inv_vars = []
+        cumulative_delivery = 0
+        for i in range(self.days):
+            cumulative_delivery += self._get_daily_delivery(i, label)
+            inv_ub = int(initial_inv * S) + (i + 1) * max_prod - int(cumulative_delivery * S)
+            inv_lb = int(safety_stock * S)
+            inv = model.NewIntVar(inv_lb, inv_ub, f"inv_{label}_{i}")
+            inv_vars.append(inv)
+
+        for i in range(self.days):
+            dd_scaled = int(self._get_daily_delivery(i, label) * S)
+            if i == 0:
+                model.Add(inv_vars[i] == int(initial_inv * S) + prod_vars[i] - dd_scaled)
+            else:
+                model.Add(inv_vars[i] == inv_vars[i - 1] + prod_vars[i] - dd_scaled)
+
+        for i in range(self.days):
+            model.Add(inv_vars[i] >= int(safety_stock * S))
+
+        return inv_vars
+
+    def _build_smoothness(self, model, combo_vars, label):
+        smooth_vars = []
+        for i in range(self.days - 1):
+            diff = model.NewIntVar(-5, 5, f"combo_diff_{label}_{i}")
+            model.Add(diff == combo_vars[i + 1] - combo_vars[i])
+            abs_diff = model.NewIntVar(0, 5, f"combo_abs_diff_{label}_{i}")
+            model.AddAbsEquality(abs_diff, diff)
+            smooth_vars.append(abs_diff)
+        return sum(smooth_vars)
 
     def run(self) -> dict:
-        model, combo_vars, primary_obj = self._build_model()
+        model, combo_1_vars, combo_2_vars, primary_obj = self._build_model()
 
         model.Minimize(primary_obj)
 
@@ -267,8 +304,9 @@ class ORToolsScheduler:
         status_name = solver.StatusName(status)
 
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-            combos = [solver.Value(combo_vars[i]) for i in range(self.days)]
-            result = self._build_result(combos)
+            combos_1 = [solver.Value(combo_1_vars[i]) for i in range(self.days)]
+            combos_2 = [solver.Value(combo_2_vars[i]) for i in range(self.days)]
+            result = self._build_result(combos_1, combos_2)
             result["solver_status"] = status_name
             result["solve_time"] = solve_time
             return result
@@ -278,100 +316,134 @@ class ORToolsScheduler:
             "message": "无可行排产方案：在给定约束条件下无法满足库存安全与交货需求，请调整参数或延长排产周期",
             "daily_results": [],
             "total_production_days": 0,
-            "overtime_days": 0,
-            "overtime_shifts": 0,
-            "holiday_production_days": 0,
-            "min_inventory": 0,
-            "final_inventory": 0,
-            "delivery_fulfilled": False,
+            "rest_days_occupied": 0,
+            "total_production_days_1": 0,
+            "min_inventory_1": 0,
+            "final_inventory_1": 0,
+            "delivery_fulfilled_1": False,
+            "holiday_production_days_1": 0,
+            "total_production_days_2": 0,
+            "min_inventory_2": 0,
+            "final_inventory_2": 0,
+            "delivery_fulfilled_2": False,
+            "holiday_production_days_2": 0,
             "solver_status": status_name,
             "solve_time": solve_time,
         }
 
-    def _build_result(self, combos: list) -> dict:
-        inventory = int(self.initial_inventory)
-        total_produced = 0
+    def _build_result(self, combos_1: list, combos_2: list) -> dict:
+        inv_1 = int(self.initial_inventory_1)
+        inv_2 = int(self.initial_inventory_2)
+        total_produced_1 = 0
+        total_produced_2 = 0
         daily_results = []
-        holiday_prod_days = 0
-        total_overtime_shifts = 0
-        total_overtime_days = 0
-        min_inventory = float("inf")
+        holiday_prod_1 = 0
+        holiday_prod_2 = 0
+        min_inv_1 = float("inf")
+        min_inv_2 = float("inf")
+        production_days = 0
+        rest_days_occupied = 0
 
-        for i, cv in enumerate(combos):
-            s1, s2 = self.COMBOS[cv]
-            daily_output = int((s1 + s2) * self.rated_output)
-            daily_delivery = self._get_daily_delivery(i)
-            inventory = inventory + daily_output - daily_delivery
-            total_produced += daily_output
+        for i, (c1, c2) in enumerate(zip(combos_1, combos_2)):
+            s1_1, s2_1 = self.COMBOS[c1]
+            s1_2, s2_2 = self.COMBOS[c2]
+            d1 = int((s1_1 + s2_1) * self.rated_output_1)
+            d2 = int((s1_2 + s2_2) * self.rated_output_2)
+            dd1 = self._get_daily_delivery(i, "1")
+            dd2 = self._get_daily_delivery(i, "2")
+            inv_1 = inv_1 + d1 - dd1
+            inv_2 = inv_2 + d2 - dd2
+            total_produced_1 += d1
+            total_produced_2 += d2
 
             is_rest = self.rest_flags[i]
             is_holiday = self.calendar_holiday_flags[i] or self.user_holiday_flags[i]
-            is_adjusted_workday = self.calendar_adjusted_workday_flags[i]
-            inv_violation = inventory < self.safety_stock
-            min_inventory = min(min_inventory, inventory)
+            is_adjusted = self.calendar_adjusted_workday_flags[i]
+            inv_violation_1 = inv_1 < self.safety_stock_1
+            inv_violation_2 = inv_2 < self.safety_stock_2
+            min_inv_1 = min(min_inv_1, inv_1)
+            min_inv_2 = min(min_inv_2, inv_2)
 
-            if cv > 0 and is_rest:
-                holiday_prod_days += 1
+            line_working = c1 > 0 or c2 > 0
+            if line_working:
+                production_days += 1
+                if is_rest:
+                    rest_days_occupied += 1
 
-            if is_rest:
-                total_overtime_shifts += self.RESTDAY_OT[cv]
-                if self.RESTDAY_HAS_OT[cv]:
-                    total_overtime_days += 1
-            else:
-                total_overtime_shifts += self.WORKDAY_OT[cv]
-                if self.WORKDAY_HAS_OT[cv]:
-                    total_overtime_days += 1
+            if c1 > 0 and is_rest:
+                holiday_prod_1 += 1
+            if c2 > 0 and is_rest:
+                holiday_prod_2 += 1
 
-            shift_label = self.COMBO_LABELS[cv]
-            prod1 = int(s1 * self.rated_output)
-            prod2 = int(s2 * self.rated_output)
+            total_hours = (s1_1 + s2_1 + s1_2 + s2_2) * 8
 
-            if s2 > 0:
-                prod_label = f"{self._fmt_num(prod1)}+{self._fmt_num(prod2)}"
-            elif s1 > 0:
-                prod_label = self._fmt_num(prod1)
-            else:
-                prod_label = "0"
+            shift_label_1 = self.COMBO_LABELS[c1]
+            prod1_1 = int(s1_1 * self.rated_output_1)
+            prod2_1 = int(s2_1 * self.rated_output_1)
+            prod_label_1 = self._fmt_prod(prod1_1, prod2_1, s1_1, s2_1)
 
-            daily_results.append(
-                {
-                    "date": self.dates[i].isoformat(),
-                    "is_holiday": is_holiday,
-                    "is_rest": is_rest,
-                    "is_adjusted_workday": is_adjusted_workday,
-                    "combo": cv,
-                    "shift1": s1,
-                    "shift2": s2,
-                    "shift_label": shift_label,
-                    "prod1": int(prod1),
-                    "prod2": int(prod2),
-                    "prod_label": prod_label,
-                    "work_hours": (s1 + s2) * 8,
-                    "daily_output": daily_output,
-                    "daily_delivery": daily_delivery,
-                    "closing_inventory": inventory,
-                    "inventory_violation": inv_violation,
-                }
-            )
+            shift_label_2 = self.COMBO_LABELS[c2]
+            prod1_2 = int(s1_2 * self.rated_output_2)
+            prod2_2 = int(s2_2 * self.rated_output_2)
+            prod_label_2 = self._fmt_prod(prod1_2, prod2_2, s1_2, s2_2)
 
-        production_days = sum(1 for cv in combos if cv > 0)
-        final_inv = daily_results[-1]["closing_inventory"] if daily_results else 0
+            daily_results.append({
+                "date": self.dates[i].isoformat(),
+                "is_holiday": is_holiday,
+                "is_rest": is_rest,
+                "is_adjusted_workday": is_adjusted,
+                "combo_1": c1,
+                "shift1_1": s1_1,
+                "shift2_1": s2_1,
+                "shift_label_1": shift_label_1,
+                "prod1_1": prod1_1,
+                "prod2_1": prod2_1,
+                "prod_label_1": prod_label_1,
+                "work_hours_1": (s1_1 + s2_1) * 8,
+                "daily_output_1": d1,
+                "daily_delivery_1": dd1,
+                "closing_inventory_1": inv_1,
+                "inventory_violation_1": inv_violation_1,
+                "combo_2": c2,
+                "shift1_2": s1_2,
+                "shift2_2": s2_2,
+                "shift_label_2": shift_label_2,
+                "prod1_2": prod1_2,
+                "prod2_2": prod2_2,
+                "prod_label_2": prod_label_2,
+                "work_hours_2": (s1_2 + s2_2) * 8,
+                "daily_output_2": d2,
+                "daily_delivery_2": dd2,
+                "closing_inventory_2": inv_2,
+                "inventory_violation_2": inv_violation_2,
+                "total_work_hours": total_hours,
+            })
+
+        final_inv_1 = daily_results[-1]["closing_inventory_1"] if daily_results else 0
+        final_inv_2 = daily_results[-1]["closing_inventory_2"] if daily_results else 0
 
         return {
             "success": True,
-            "message": "排产计算完成（OR-Tools CP-SAT求解器）",
+            "message": "排产计算完成（OR-Tools CP-SAT双物品求解器）",
             "daily_results": daily_results,
             "total_production_days": production_days,
-            "overtime_days": total_overtime_days,
-            "overtime_shifts": total_overtime_shifts,
-            "holiday_production_days": holiday_prod_days,
-            "min_inventory": min_inventory,
-            "final_inventory": final_inv,
-            "delivery_fulfilled": total_produced + self.initial_inventory >= self.total_delivery,
+            "rest_days_occupied": rest_days_occupied,
+            "total_production_days_1": sum(1 for cv in combos_1 if cv > 0),
+            "min_inventory_1": int(min_inv_1),
+            "final_inventory_1": int(final_inv_1),
+            "delivery_fulfilled_1": total_produced_1 + self.initial_inventory_1 >= self.total_delivery_1,
+            "holiday_production_days_1": holiday_prod_1,
+            "total_production_days_2": sum(1 for cv in combos_2 if cv > 0),
+            "min_inventory_2": int(min_inv_2),
+            "final_inventory_2": int(final_inv_2),
+            "delivery_fulfilled_2": total_produced_2 + self.initial_inventory_2 >= self.total_delivery_2,
+            "holiday_production_days_2": holiday_prod_2,
         }
 
     @staticmethod
-    def _fmt_num(val: float) -> str:
-        if val == int(val):
-            return str(int(val))
-        return str(round(val, 2))
+    def _fmt_prod(p1: int, p2: int, s1: float, s2: float) -> str:
+        if s2 > 0:
+            return f"{p1}+{p2}"
+        if s1 > 0:
+            return str(p1)
+        return "0"

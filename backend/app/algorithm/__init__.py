@@ -1,3 +1,3 @@
-from .scheduler import ORToolsScheduler
+from .scheduler import TwoProductScheduler
 
-__all__ = ["ORToolsScheduler"]
+__all__ = ["TwoProductScheduler"]
