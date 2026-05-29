@@ -1,44 +1,64 @@
-# 智能排产系统 V2.0
+# 智能排产系统 V2.1
 
 基于 **Google OR-Tools CP-SAT** 约束优化的智能生产排产系统，支持 **双物料共享单条产线**，采用 Python FastAPI + React 前后端分离架构，数据持久化使用 MySQL。
 
 ## 项目结构
 
 ```
-POC/
+智能排产POC/
 ├── backend/                          # 后端 - FastAPI
 │   ├── main.py                       # 入口文件 (uvicorn 启动)
 │   └── app/
-│       ├── __init__.py               # FastAPI 应用初始化、CORS、路由注册、数据库自动建表
-│       ├── database.py               # SQLAlchemy 连接配置（MySQL）
+│       ├── __init__.py               # FastAPI 应用初始化、CORS、路由注册、数据库自动建表+迁移
+│       ├── database.py               # SQLAlchemy 连接配置（MySQL，连接池）
 │       ├── algorithm/
 │       │   └── scheduler.py          # OR-Tools CP-SAT 排产算法核心（双物料）
 │       ├── api/
-│       │   ├── scheduling.py         # 排产计算/校验 API（含 by-plan 端点）
+│       │   ├── scheduling.py         # 排产计算/校验/导出 API
 │       │   ├── production_lines.py   # 产线 & 物料 CRUD API
 │       │   └── delivery_plans.py     # 交货计划 CRUD API
 │       ├── models/
 │       │   ├── schemas.py            # Pydantic 数据模型（排产请求/响应）
 │       │   └── db_models.py          # SQLAlchemy ORM 模型（4 张表）
 │       └── services/
-│           └── scheduling_service.py # 排产业务逻辑
+│           └── scheduling_service.py # 排产业务逻辑 + Excel 导出
 ├── frontend/                         # 前端 - React + Vite
-│   ├── package.json
+│   ├── index.html                    # HTML 入口
+│   ├── package.json                  # 依赖及脚本配置
 │   ├── vite.config.js                # Vite 配置（端口3000，/api 代理到8000）
 │   └── src/
 │       ├── App.jsx                   # 根组件（左侧导航栏 + React Router）
 │       ├── App.css
-│       ├── api/api.js                # Axios 请求封装
+│       ├── api/api.js                # Axios 请求封装（13 个 API 函数）
 │       ├── components/
-│       │   ├── ResultTable.jsx       # 排产结果明细表格
-│       │   └── ResultCharts.jsx      # 趋势图表
+│       │   ├── ParameterForm.jsx     # [V1遗留] 参数表单组件（当前未使用）
+│       │   ├── ResultTable.jsx       # 排产结果明细表格（含导出按钮）
+│       │   └── ResultCharts.jsx      # 趋势图表 + 统计卡片
 │       └── pages/
 │           ├── MaterialManagement.jsx # 物料管理页面
 │           ├── LineManagement.jsx     # 产线管理页面
 │           ├── DeliveryPlan.jsx       # 交货计划页面
 │           └── Scheduling.jsx         # 排产计算页面
-└── README.md
+├── README.md
+└── 导出模板.xlsx                      # Excel 导出模板
 ```
+
+## 技术栈
+
+| 分类 | 技术 | 版本 | 用途 |
+|------|------|------|------|
+| 后端框架 | FastAPI | ^0.104.1 | REST API |
+| 算法引擎 | Google OR-Tools CP-SAT | - | 约束求解 |
+| 数据库 | MySQL | 8.0 | 数据持久化 |
+| ORM | SQLAlchemy | ^2.0.23 | 数据库操作 |
+| 前端框架 | React | ^19.2.6 | UI 构建 |
+| 构建工具 | Vite | ^8.0.12 | 前端构建 |
+| 路由 | React Router | ^7.15.1 | SPA 路由 |
+| 图表 | Recharts | ^3.8.1 | 数据可视化 |
+| 日期处理 | Day.js | ^1.11.20 | 日期格式化 |
+| HTTP 客户端 | Axios | ^1.16.1 | API 请求 |
+| 日历库 | chinese-calendar | - | 中国法定节假日/调休识别 |
+| Excel 导出 | openpyxl | - | 排产结果导出 |
 
 ## 环境要求
 
@@ -49,7 +69,7 @@ POC/
 
 ## 环境搭建
 
-> 以下命令从项目根目录 `POC/` 执行。需先安装 [Miniconda](https://docs.conda.io/en/latest/miniconda.html) 和 [Docker Desktop](https://www.docker.com/products/docker-desktop/)。
+以下命令从项目根目录 `智能排产POC/` 执行。需先安装 [Miniconda](https://docs.conda.io/en/latest/miniconda.html) 和 [Docker Desktop](https://www.docker.com/products/docker-desktop/)。
 
 ### 1. 启动 MySQL 容器
 
@@ -72,7 +92,7 @@ conda run -n smart-scheduling --cwd frontend npm install
 
 ## 启动方式
 
-> 需先确保 Docker Desktop 和 MySQL 容器已启动，然后分别启动后端和前端，使用两个终端窗口。
+需先确保 Docker Desktop 和 MySQL 容器已启动，然后分别启动后端和前端，使用两个终端窗口。
 
 | 服务 | 启动命令 | 地址 |
 |------|---------|------|
@@ -83,44 +103,93 @@ conda run -n smart-scheduling --cwd frontend npm install
 
 ## 前端页面
 
-系统采用左侧导航栏 + 多页面路由架构，共 4 个页面：
+系统采用左侧深色导航栏 + 多页面路由架构，共 4 个页面：
 
 | 页面 | 路由 | 功能 |
 |------|------|------|
-| 📦 物料管理 | `/materials` | 管理物料基础信息（名称、初期库存、安全库存） |
-| 🏭 产线管理 | `/lines` | 管理产线，为产线添加可生产物料及 8H 班产量 |
+| 🚀 排产计算 | `/` | 选择交货计划 + 配置算法参数 → 一键排产，查看结果表格/图表，导出 Excel |
+| 📦 物料管理 | `/materials` | 管理物料基础信息（名称、编码、安全库存） |
+| 🏭 产线管理 | `/lines` | 管理产线，为产线添加可生产物料及 8H 班产量、初期库存、安全库存 |
 | 📋 交货计划 | `/delivery-plans` | 创建交货计划，选择产线 + 物料，输入每日交货量 |
-| 🚀 排产计算 | `/` | 选择交货计划 + 配置算法参数 → 一键排产 |
 
 ### 使用流程
 
-1. **物料管理**：添加物料（名称、初期库存、安全库存）
-2. **产线管理**：创建产线，添加可生产物料并设定 8H 班产量（初期库存和安全库存自动从物料带入）
+1. **物料管理**：添加物料（名称、编码、安全库存）
+2. **产线管理**：创建产线，添加可生产物料并设定 8H 班产量、初期库存和安全库存
 3. **交货计划**：选择产线，为每个物料输入每日交货量（空格分隔，自动校验天数匹配，自动计算总交货量）
-4. **排产计算**：选择交货计划，调整算法配置，点击"开始排产"
+4. **排产计算**：选择交货计划，调整算法配置，点击"开始排产"，查看结果并导出
 
 ## 数据库设计
 
-使用 MySQL 持久化存储，SQLAlchemy ORM 自动建表：
+使用 MySQL 持久化存储，SQLAlchemy ORM 自动建表。应用启动时自动执行增量迁移（新增字段、重命名列等），无需手动执行 SQL。
 
-| 表名 | 说明 |
-|------|------|
-| `products` | 物料基础信息（名称、初期库存、安全库存） |
-| `production_lines` | 产线 |
-| `line_products` | 产线-物料关联（含 8H 班产量，初期库存和安全库存从物料带入） |
-| `delivery_plans` | 交货计划（关联产线 + 两个物料 + 日期 + 每日交货量） |
+### 表结构
+
+#### `products` — 物料基础信息
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | Integer | PK, 自增 | 主键 |
+| name | String(100) | NOT NULL, UNIQUE | 物料名称 |
+| code | String(50) | nullable | 物料编码 |
+| safety_stock | Float | NOT NULL, default=0 | 安全库存 |
+| created_at | DateTime | default=now | 创建时间 |
+
+#### `production_lines` — 产线
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | Integer | PK, 自增 | 主键 |
+| name | String(100) | NOT NULL, UNIQUE | 产线名称 |
+| created_at | DateTime | default=now | 创建时间 |
+
+#### `line_products` — 产线-物料关联
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | Integer | PK, 自增 | 主键 |
+| line_id | Integer | FK → production_lines, CASCADE | 所属产线 |
+| product_id | Integer | FK → products, CASCADE | 关联物料 |
+| initial_inventory | Float | NOT NULL, default=0 | 初期库存 |
+| safety_stock | Float | NOT NULL, default=0 | 安全库存 |
+| rated_output | Float | NOT NULL, default=0 | 8H 班产量 |
+
+#### `delivery_plans` — 交货计划
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | Integer | PK, 自增 | 主键 |
+| name | String(200) | NOT NULL | 计划名称 |
+| line_id | Integer | FK → production_lines, CASCADE | 所属产线 |
+| product_1_id | Integer | FK → line_products, CASCADE | 物品1关联ID |
+| product_2_id | Integer | FK → line_products, CASCADE | 物品2关联ID |
+| initial_inventory_1 | Float | NOT NULL, default=0 | 物品1初期库存 |
+| initial_inventory_2 | Float | NOT NULL, default=0 | 物品2初期库存 |
+| start_date | Date | NOT NULL | 排产开始日期 |
+| end_date | Date | NOT NULL | 排产结束日期 |
+| total_delivery_1 | Float | NOT NULL, default=0 | 物品1总交货量 |
+| total_delivery_2 | Float | NOT NULL, default=0 | 物品2总交货量 |
+| daily_deliveries_1 | Text | nullable | 物品1每日交货量（JSON 数组） |
+| daily_deliveries_2 | Text | nullable | 物品2每日交货量（JSON 数组） |
+| created_at | DateTime | default=now | 创建时间 |
 
 ### 数据关系
 
 ```
 products ──1:N──> line_products ──N:1──> production_lines
                                         │
-delivery_plans ──FK──> production_lines
-              ──FK──> line_products (product_a)
-              ──FK──> line_products (product_b)
+delivery_plans ──FK──> production_lines (line_id)
+              ──FK──> line_products (product_1_id)
+              ──FK──> line_products (product_2_id)
 ```
 
 ## API 接口
+
+### 系统
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/` | 系统信息（版本号） |
 
 ### 物料管理
 
@@ -128,6 +197,7 @@ delivery_plans ──FK──> production_lines
 |------|------|------|
 | GET | `/api/lines/products` | 获取物料列表 |
 | POST | `/api/lines/products` | 创建物料 |
+| PUT | `/api/lines/products/{id}` | 更新物料 |
 | DELETE | `/api/lines/products/{id}` | 删除物料 |
 
 ### 产线管理
@@ -136,7 +206,7 @@ delivery_plans ──FK──> production_lines
 |------|------|------|
 | GET | `/api/lines` | 获取产线列表（含可生产物料） |
 | POST | `/api/lines` | 创建产线（同时添加可生产物料及 8H 班产量） |
-| DELETE | `/api/lines/{id}` | 删除产线（级联删除关联） |
+| DELETE | `/api/lines/{id}` | 删除产线（级联删除关联及交货计划） |
 
 ### 交货计划
 
@@ -170,7 +240,7 @@ delivery_plans ──FK──> production_lines
 }
 ```
 
-> `daily_deliveries` 为空格分隔的每日交货量，数量必须与排产天数匹配，`total_delivery` 由后端自动求和计算。
+> `daily_deliveries` 为空格分隔的每日交货量，数量必须与排产天数匹配，`total_delivery` 由后端自动求和计算。交货计划**强制要求恰好 2 个物料**，且物料不能重复、必须属于指定产线。
 
 ### 排产计算
 
@@ -178,7 +248,8 @@ delivery_plans ──FK──> production_lines
 |------|------|------|
 | POST | `/api/schedule` | 直接传入参数执行排产计算 |
 | POST | `/api/schedule/by-plan` | 通过交货计划 ID 执行排产计算 |
-| POST | `/api/validate` | 参数可行性校验 |
+| POST | `/api/validate` | 参数可行性校验（不执行求解，仅判断产能是否足够） |
+| POST | `/api/schedule/export` | 导出排产结果为 Excel 文件 |
 
 #### by-plan 请求体
 
@@ -200,10 +271,12 @@ delivery_plans ──FK──> production_lines
 | `success` | bool | 是否找到可行解 |
 | `solver_status` | string | `"OPTIMAL"`（最优解） / `"FEASIBLE"`（可行解） |
 | `solve_time` | float | 求解实际耗时（秒） |
-| `daily_results` | array | 每日排产明细（含 A/B 双物料） |
-| `total_production_days_a` / `_b` | int | 各物料独立生产天数 |
-| `delivery_fulfilled_a` / `_b` | bool | 各物料是否达到交货量 |
+| `daily_results` | array | 每日排产明细（含 1/2 双物料，共 22 个字段） |
+| `total_production_days_1` / `_2` | int | 各物料独立生产天数 |
+| `delivery_fulfilled_1` / `_2` | bool | 各物料是否达到交货量 |
 | `rest_days_occupied` | int | 产线休息日占用天数（共享） |
+| `min_inventory_1` / `_2` | float | 各物料最低库存 |
+| `final_inventory_1` / `_2` | float | 各物料期末库存 |
 
 ### 算法配置参数
 
@@ -215,14 +288,14 @@ delivery_plans ──FK──> production_lines
 
 ## 算法说明
 
-使用 Google OR-Tools CP-SAT 约束求解器，单阶段优化目标函数。
+使用 Google OR-Tools CP-SAT 约束求解器，单阶段优化目标函数，多线程并行搜索（`num_workers = min(8, cpu_count)`）。
 
 ### 双物料共享产线模型
 
-- **一条产线**同时生产两个物料（A 和 B），每天最多 **24 小时**（= 3.0 班，每班 8 小时）
+- **一条产线**同时生产两个物料（1 和 2），每天最多 **24 小时**（= 3.0 班，每班 8 小时）
 - 最小分配单位 **4 小时**（= 0.5 班）
 - 两个物料各有一个 **combo** 变量（0~5），各自独立决定当天的前后班次组合
-- 两个 combo 的总工时 ≤ 24h（`shift_a + shift_b ≤ 3.0` 班）
+- 两个 combo 的总工时 ≤ 24h（`shift_1 + shift_2 ≤ 3.0` 班）
 - 两个物料有**独立**的初期库存、安全库存、8H 班产量和每日交货量
 
 ### 班次模型
@@ -240,11 +313,11 @@ delivery_plans ──FK──> production_lines
 
 ### 硬约束
 
-- **24h 共享工时约束**：`shift_a + shift_b ≤ 3.0`（= 24h），每天两个物料的总工时不能超过 24h
+- **24h 共享工时约束**：`shift_1 + shift_2 ≤ 3.0`（= 24h），每天两个物料的总工时不能超过 24h
 - **库存平衡约束**：每个物料各自独立，每日结存库存 = 前日结存 + 当日产量 - 当日交货
 - **库存安全约束**：每个物料各自独立，每日结存库存 ≥ 安全库存
 - **连续工作约束**：不允许产线连续运行超过 `max_consecutive_work_days` 天（产线级别硬约束，任一物料生产即算产线运行）
-- **可行性校验**：
+- **可行性校验**（求解前预检查）：
   - 每个物料单独校验：最大产能 ≥ 净需求
   - 两个物料合计校验：总最大产能 ≥ 合计净需求
 
@@ -254,16 +327,16 @@ delivery_plans ──FK──> production_lines
 
 | 惩罚项 | 内部权重 | 用户可配 | 作用范围 | 说明 |
 |-------|---------|---------|---------|------|
-| 过量生产惩罚 | 1 | 否 | **物料级**（求和） | 防止无限过量生产，A 和 B 各自计算 `期末库存-安全库存` 后加总 |
+| 过量生产惩罚 | 1 | 否 | **物料级**（求和） | 防止无限过量生产，1 和 2 各自计算 `期末库存-安全库存` 后加总 |
 | 占用休息日惩罚 | 用户值×2 | 是（默认50） | **产线级**（共享） | 休息日产线有任一物料生产即计为 1 次占用 |
-| 产量平滑惩罚 | 5 | 否 | **物料级**（求和） | 相邻两天 combo 等级差的绝对值之和，A 和 B 独立计算后加总 |
+| 产量平滑惩罚 | 5 | 否 | **物料级**（求和） | 相邻两天 combo 等级差的绝对值之和，1 和 2 独立计算后加总 |
 | 长连续工作惩罚 | 60 | 否 | **产线级**（共享） | 连续工作 `max_consecutive_work_days-1` 天以上的窗口数 |
 
 #### 惩罚粒度说明
 
 | 惩罚项 | 计算方式 |
 |-------|---------|
-| **物料级（求和）** | A 和 B 各自的指标独立计算，加总后计入目标函数 |
+| **物料级（求和）** | 1 和 2 各自的指标独立计算，加总后计入目标函数 |
 | **产线级（共享）** | 使用共享的 `is_work_day[i]` 布尔变量（当天任一物料开工即标记），指标在产线层面统一计算 |
 
 ### 日历识别
@@ -288,13 +361,35 @@ delivery_plans ──FK──> production_lines
 - **缩放因子**：`scale=2` 将浮点数转为整数运算
 - **权重归一化**：休息日权重乘以 2（缩放到与缩放因子一致）
 - **收紧变量界**：库存变量采用逐天收紧的上下界，帮助求解器快速剪枝
+- **多线程并行**：`num_workers = min(8, cpu_count)`，充分利用多核 CPU 并行搜索
 
-## 调试模式
+## 功能特性
+
+### Excel 导出
+
+排产结果支持一键导出为 Excel 文件（`排产结果.xlsx`），基于 `导出模板.xlsx` 模板填充：
+
+- 动态列数（根据排产天数自动扩展/收缩）
+- 周数合并单元格、日期/星期行
+- 休息日粉色高亮标记
+- 合计列、班次合计列
+- 自动清除超出范围的残留格式和批注
+
+### 调试模式
 
 排产计算页面提供 🛠 **调试模式** 切换按钮。开启后，排产结果上方会显示求解器调试面板，包含：
 
 - **求解器状态**：`OPTIMAL`（绿色）或 `FEASIBLE`（黄色）
 - **求解耗时**：精确到毫秒级
+
+### 前端校验
+
+交货计划页面提供实时输入校验：
+
+- 每日交货量天数匹配检查
+- 非负整数格式校验
+- 总交货量自动计算
+- 重复物料检测
 
 ## 版本变更
 
@@ -302,4 +397,4 @@ delivery_plans ──FK──> production_lines
 |------|------|
 | V1.0 | 单物料单产线，支持 6 种班次组合，含加班惩罚 |
 | V2.0 | **双物料共享单产线**，每天 24h 工时竞争，独立库存/产量/交货，删除加班惩罚 |
-| V2.1 | 前端重构为四页面 + 左侧导航栏，后端集成 MySQL 持久化，交货计划支持每日交货量输入 |
+| V2.1 | 前端重构为四页面 + 左侧导航栏，后端集成 MySQL 持久化，交货计划支持每日交货量输入，Excel 导出，数据库自动迁移 |

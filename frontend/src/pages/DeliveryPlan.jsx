@@ -11,6 +11,9 @@ const btnPrimary = { padding: '8px 16px', backgroundColor: '#7c3aed', color: '#f
 const btnDanger = { padding: '6px 12px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }
 const btnGhost = { padding: '6px 12px', backgroundColor: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }
 
+const MATERIAL_COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2']
+const MATERIAL_BG_COLORS = ['#eff6ff', '#ecfdf5', '#fffbeb', '#fef2f2', '#f5f3ff', '#ecfeff']
+
 export default function DeliveryPlanPage() {
   const [plans, setPlans] = useState([])
   const [lines, setLines] = useState([])
@@ -39,7 +42,7 @@ export default function DeliveryPlanPage() {
   }
 
   const addMaterial = () => {
-    setForm(prev => ({ ...prev, materials: [...prev.materials, { line_product_id: '', daily_deliveries_str: '', computed_total: 0 }] }))
+    setForm(prev => ({ ...prev, materials: [...prev.materials, { line_product_id: '', initial_inventory: 0, daily_deliveries_str: '', computed_total: 0 }] }))
   }
 
   const removeMaterial = (idx) => {
@@ -85,8 +88,8 @@ export default function DeliveryPlanPage() {
       alert('请填写计划名称并选择产线')
       return
     }
-    if (form.materials.length < 2) {
-      alert('至少需要添加2个物料')
+    if (form.materials.length < 1) {
+      alert('至少需要添加1个物料')
       return
     }
     const daysCount = getDaysCount()
@@ -111,26 +114,31 @@ export default function DeliveryPlanPage() {
       alert('物料不能重复')
       return
     }
-    await createDeliveryPlan({
-      name: form.name,
-      line_id: form.line_id,
-      materials: form.materials.map(m => ({
-        line_product_id: m.line_product_id,
-        initial_inventory: m.initial_inventory || 0,
-        daily_deliveries: m.daily_deliveries_str.trim(),
-        total_delivery: m.computed_total,
-      })),
-      start_date: form.start_date,
-      end_date: form.end_date,
-    })
-    setForm({
-      name: '', line_id: '', materials: [],
-      start_date: dayjs().format('YYYY-MM-DD'),
-      end_date: dayjs().add(29, 'day').format('YYYY-MM-DD'),
-    })
-    setSelectedLine(null)
-    setShowForm(false)
-    load()
+    try {
+      await createDeliveryPlan({
+        name: form.name,
+        line_id: form.line_id,
+        materials: form.materials.map(m => ({
+          line_product_id: m.line_product_id,
+          initial_inventory: m.initial_inventory || 0,
+          daily_deliveries: m.daily_deliveries_str.trim(),
+          total_delivery: m.computed_total,
+        })),
+        start_date: form.start_date,
+        end_date: form.end_date,
+      })
+      setForm({
+        name: '', line_id: '', materials: [],
+        start_date: dayjs().format('YYYY-MM-DD'),
+        end_date: dayjs().add(29, 'day').format('YYYY-MM-DD'),
+      })
+      setSelectedLine(null)
+      setShowForm(false)
+      load()
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || '创建交货计划失败'
+      alert(msg)
+    }
   }
 
   const handleDelete = async (id) => {
@@ -183,18 +191,20 @@ export default function DeliveryPlanPage() {
             {selectedLine && (
               <>
                 <div style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ ...labelStyle, marginBottom: 0 }}>交货物料</label>
-                  <button onClick={addMaterial} style={{ ...btnGhost, fontSize: '12px' }} disabled={form.materials.length >= 2}>
-                    + 添加物料
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>交货物料（1~6个）</label>
+                  <button onClick={addMaterial} style={{ ...btnGhost, fontSize: '12px' }} disabled={form.materials.length >= 6}>
+                    + 添加物料 {form.materials.length >= 6 ? '(已达上限)' : `(${form.materials.length}/6)`}
                   </button>
                 </div>
                 {form.materials.map((fm, idx) => {
                   const lp = lineProducts.find(x => x.id === parseInt(fm.line_product_id))
+                  const color = MATERIAL_COLORS[idx % MATERIAL_COLORS.length]
+                  const bgColor = MATERIAL_BG_COLORS[idx % MATERIAL_BG_COLORS.length]
                   return (
-                    <div key={idx} style={{ marginBottom: '12px', padding: '12px', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                    <div key={idx} style={{ marginBottom: '12px', padding: '12px', backgroundColor: '#fff', borderRadius: '8px', border: `1px solid ${color}33`, borderLeft: `3px solid ${color}` }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr auto', gap: '8px', marginBottom: '8px', alignItems: 'end' }}>
                         <div>
-                          <label style={{ ...labelStyle, fontSize: '11px' }}>选择物料</label>
+                          <label style={{ ...labelStyle, fontSize: '11px', color }}>物料 {idx + 1}</label>
                           <select style={inputStyle} value={fm.line_product_id} onChange={e => setForm(prev => { const m = [...prev.materials]; m[idx] = { line_product_id: parseInt(e.target.value), initial_inventory: 0, daily_deliveries_str: '', computed_total: 0, daily_error: null }; return { ...prev, materials: m } })}>
                             <option value="">选择物料</option>
                             {lineProducts.map(lp => <option key={lp.id} value={lp.id}>{lp.product_name}</option>)}
@@ -233,9 +243,9 @@ export default function DeliveryPlanPage() {
                     </div>
                   )
                 })}
-                {lineProducts.length < 2 && (
+                {lineProducts.length < 1 && (
                   <div style={{ padding: '12px', backgroundColor: '#fef3c7', borderRadius: '8px', color: '#92400e', fontSize: '13px', marginBottom: '12px' }}>
-                    ⚠️ 该产线关联的物料不足2个，请先在产线管理中为产线添加至少2个物料
+                    ⚠️ 该产线关联的物料不足，请先在产线管理中为产线添加物料
                   </div>
                 )}
               </>
@@ -271,8 +281,8 @@ export default function DeliveryPlanPage() {
                     {p.materials.map((m, idx) => (
                       <span key={idx} style={{
                         padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500',
-                        backgroundColor: idx === 0 ? '#eff6ff' : '#ecfdf5',
-                        color: idx === 0 ? '#2563eb' : '#059669',
+                        backgroundColor: MATERIAL_BG_COLORS[idx % MATERIAL_BG_COLORS.length],
+                        color: MATERIAL_COLORS[idx % MATERIAL_COLORS.length],
                       }}>
                         {m.product_name}(总交货量{m.total_delivery})
                       </span>

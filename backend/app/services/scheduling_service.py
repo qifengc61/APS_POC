@@ -1,51 +1,44 @@
 from io import BytesIO
-from datetime import date
+from datetime import date, timedelta
+from copy import copy
 from openpyxl import load_workbook
-from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
-from ..models.schemas import SchedulingParams, ProductParams, AlgorithmConfig
-from ..algorithm.scheduler import TwoProductScheduler
-
-
-def _clear_cell(cell):
-    cell.value = None
-    cell.font = Font()
-    cell.fill = PatternFill(fill_type=None)
-    cell.border = Border()
-    cell.alignment = Alignment()
-    cell.number_format = "General"
+from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
+from openpyxl.utils import get_column_letter
+from ..models.schemas import SchedulingParams, AlgorithmConfig
+from ..algorithm.scheduler import MultiProductScheduler
 
 
 TEMPLATE_PATH = r"d:\Desktop\智能排产\智能排产POC\导出模板.xlsx"
 
-TEMPLATE_BORDER = Border(
-    left=Side(style="thin"),
-    right=Side(style="thin"),
-    top=Side(style="thin"),
-    bottom=Side(style="thin"),
-)
-TEMPLATE_FONT = Font(name="宋体", size=9)
-TEMPLATE_ALIGNMENT = Alignment(horizontal="center", vertical="center")
-
 WEEKDAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 
-# 模板各行背景色（用于动态列保持一致）
-ROW_FILLS = {
-    4: PatternFill(start_color="FFCCFFFF", end_color="FFCCFFFF", fill_type="solid"),
-    5: PatternFill(start_color="FFCCFFFF", end_color="FFCCFFFF", fill_type="solid"),
-    8: PatternFill(start_color="FFBFBFBF", end_color="FFBFBFBF", fill_type="solid"),
-    9: PatternFill(start_color="FFCCFFFF", end_color="FFCCFFFF", fill_type="solid"),
-    10: PatternFill(start_color="FFCCFFFF", end_color="FFCCFFFF", fill_type="solid"),
-    13: PatternFill(start_color="FFBFBFBF", end_color="FFBFBFBF", fill_type="solid"),
-}
+HEADER_ROWS = 3
+DATA_ROWS = 5
+COL_START = 10  # J
+
+
+def _copy_style(src, dst):
+    dst.font = copy(src.font)
+    dst.fill = copy(src.fill)
+    dst.border = copy(src.border)
+    dst.alignment = copy(src.alignment)
+    if src.number_format:
+        dst.number_format = src.number_format
+
+
+def _clear_range(ws, min_row, max_row, min_col, max_col):
+    for r in range(min_row, max_row + 1):
+        for c in range(min_col, max_col + 1):
+            cell = ws.cell(row=r, column=c)
+            cell.value = None
 
 
 class SchedulingService:
     @staticmethod
     def calculate(params: SchedulingParams, config: AlgorithmConfig, holidays: list = None) -> dict:
         holiday_list = holidays or []
-        scheduler = TwoProductScheduler(
-            product_1=params.product_1,
-            product_2=params.product_2,
+        scheduler = MultiProductScheduler(
+            products=params.products,
             start_date=params.start_date,
             end_date=params.end_date,
             holidays=holiday_list,
@@ -53,233 +46,174 @@ class SchedulingService:
             rest_day_weight=config.rest_day_weight,
             max_consecutive_work_days=config.max_consecutive_work_days,
         )
-        result = scheduler.run()
-        return result
+        return scheduler.run()
 
     @staticmethod
     def export_excel(result: dict, plan_info: dict = None) -> BytesIO:
+        daily_results = result.get("daily_results", [])
+        num_days = len(daily_results)
+        num_products = result.get("num_products", 1)
+
         wb = load_workbook(TEMPLATE_PATH)
         ws = wb.active
 
-        for sheet in wb.worksheets:
-            if hasattr(sheet, '_comments') and sheet._comments:
-                sheet._comments = []
-            for row in sheet.iter_rows():
-                for cell in row:
-                    if cell.comment:
-                        cell.comment = None
+        pink_fill = PatternFill(start_color="FFE0E0", end_color="FFE0E0", fill_type="solid")
 
-        daily_results = result.get("daily_results", [])
-        num_days = len(daily_results)
-        if num_days == 0:
-            buffer = BytesIO()
-            wb.save(buffer)
-            buffer.seek(0)
-            return buffer
+        last_date_col = COL_START + num_days - 1
 
-        p1 = (plan_info or {}).get("product_1") or {}
-        p2 = (plan_info or {}).get("product_2") or {}
+        for mc in list(ws.merged_cells.ranges):
+            if mc.min_row >= HEADER_ROWS + 1:
+                ws.unmerge_cells(str(mc))
+            elif mc.min_col >= COL_START:
+                ws.unmerge_cells(str(mc))
 
-        ws.cell(row=4, column=2, value=p1.get("code", ""))
-        ws.cell(row=4, column=3, value=p1.get("name", ""))
-        ws.cell(row=4, column=4, value=p1.get("initial_inventory", 0))
-        ws.cell(row=4, column=5, value=p1.get("safety_stock", 0))
-        ws.cell(row=4, column=7, value=p1.get("rated_output", 0))
-        total_delivery_1 = p1.get("total_delivery", 0)
-        ws.cell(row=7, column=9, value=total_delivery_1)
+        total_data_rows = num_products * DATA_ROWS
+        existing_data_rows = ws.max_row - HEADER_ROWS
 
-        ws.cell(row=9, column=2, value=p2.get("code", ""))
-        ws.cell(row=9, column=3, value=p2.get("name", ""))
-        ws.cell(row=9, column=4, value=p2.get("initial_inventory", 0))
-        ws.cell(row=9, column=5, value=p2.get("safety_stock", 0))
-        ws.cell(row=9, column=7, value=p2.get("rated_output", 0))
-        total_delivery_2 = p2.get("total_delivery", 0)
-        ws.cell(row=12, column=9, value=total_delivery_2)
+        need_insert = total_data_rows - existing_data_rows
+        if need_insert > 0:
+            ws.insert_rows(HEADER_ROWS + existing_data_rows + 1, amount=need_insert)
 
-        safety_1 = p1.get("safety_stock", 0)
-        init_inv_1 = p1.get("initial_inventory", 0)
-        net_demand_1 = total_delivery_1 + safety_1 - init_inv_1
-        ws.cell(row=4, column=6, value=net_demand_1)
+        def _ref_cell(row_offset, col):
+            return ws.cell(row=HEADER_ROWS + 1 + row_offset, column=col)
 
-        safety_2 = p2.get("safety_stock", 0)
-        init_inv_2 = p2.get("initial_inventory", 0)
-        net_demand_2 = total_delivery_2 + safety_2 - init_inv_2
-        ws.cell(row=9, column=6, value=net_demand_2)
+        def _set_cell(row_offset, col, value):
+            return ws.cell(row=HEADER_ROWS + 1 + row_offset, column=col, value=value)
 
-        ws.cell(row=4, column=1, value=1)
-        ws.cell(row=9, column=1, value=2)
+        style_template = {}
+        for ro in range(DATA_ROWS):
+            for c in range(1, ws.max_column + 1):
+                style_template[(ro, c)] = _ref_cell(ro, c)
 
-        # ── 清空 J 列之后的所有旧内容（含合并单元格），实现动态天数 ──
-        start_col = 10
-        for merge_range in list(ws.merged_cells.ranges):
-            if merge_range.min_col >= start_col:
-                ws.unmerge_cells(str(merge_range))
+        _clear_range(ws, HEADER_ROWS + 1, HEADER_ROWS + total_data_rows, 1, ws.max_column)
 
-        for r in range(1, ws.max_row + 1):
-            for c in range(start_col, ws.max_column + 1):
-                cell = ws.cell(row=r, column=c)
-                cell.value = None
-                cell.fill = PatternFill(fill_type=None)
+        for pidx in range(num_products):
+            base_ro = pidx * DATA_ROWS
+            pi = (plan_info or {}).get(f"product_{pidx + 1}", {})
 
-        # ── 动态写入每日排产明细 ──
-        days_to_write = num_days
-        end_col = start_col + days_to_write - 1
-        bg_col = end_col + 1
+            for ro in range(DATA_ROWS):
+                for c in range(1, COL_START):
+                    src = style_template.get((ro, c))
+                    dst = _set_cell(base_ro + ro, c, None)
+                    if src:
+                        _copy_style(src, dst)
 
-        ab_rows = {4, 5, 9, 10}
+            for c in range(COL_START, last_date_col + 1):
+                for ro in range(DATA_ROWS):
+                    src = style_template.get((ro, COL_START))
+                    dst = _set_cell(base_ro + ro, c, None)
+                    if src:
+                        _copy_style(src, dst)
 
-        sum_1a = 0
-        sum_1b = 0
-        sum_1_prod = 0
-        sum_2a = 0
-        sum_2b = 0
-        sum_2_prod = 0
-        sum_shift1_1 = 0.0
-        sum_shift2_1 = 0.0
-        sum_shift1_2 = 0.0
-        sum_shift2_2 = 0.0
+            net_demand = pi.get("total_delivery", 0) + pi.get("safety_stock", 0) - pi.get("initial_inventory", 0)
+            _set_cell(base_ro, 1, pidx + 1)
+            _set_cell(base_ro, 2, pi.get("code", ""))
+            _set_cell(base_ro, 3, pi.get("name", ""))
+            _set_cell(base_ro, 4, pi.get("initial_inventory", 0))
+            _set_cell(base_ro, 5, pi.get("safety_stock", 0))
+            _set_cell(base_ro, 6, net_demand)
+            _set_cell(base_ro, 7, pi.get("rated_output", 0))
 
-        for i in range(days_to_write):
-            col = start_col + i
+            _set_cell(base_ro, 8, "A")
+            _set_cell(base_ro + 1, 8, "B")
+            _set_cell(base_ro + 2, 8, "计划生产量")
+            _set_cell(base_ro + 3, 8, "计划交货量")
+            _set_cell(base_ro + 4, 8, "库存结存量")
+
+            for c in [1, 2, 3, 4, 5, 6, 7]:
+                if DATA_ROWS > 1:
+                    ws.merge_cells(
+                        start_row=HEADER_ROWS + 1 + base_ro, start_column=c,
+                        end_row=HEADER_ROWS + 1 + base_ro + DATA_ROWS - 1, end_column=c
+                    )
+
+            sum_shift1 = 0
+            sum_shift2 = 0
+            sum_output = 0
+
+            for i in range(num_days):
+                col = COL_START + i
+                dr = daily_results[i]
+                pkey = pidx + 1
+
+                prod1 = dr.get(f"prod1_{pkey}", 0)
+                prod2 = dr.get(f"prod2_{pkey}", 0)
+                output = dr.get(f"daily_output_{pkey}", 0)
+                delivery = dr.get(f"daily_delivery_{pkey}", 0)
+                inv = dr.get(f"closing_inventory_{pkey}", 0)
+
+                _set_cell(base_ro, col, prod1 if prod1 > 0 else None)
+                _set_cell(base_ro + 1, col, prod2 if prod2 > 0 else None)
+                _set_cell(base_ro + 2, col, output)
+                _set_cell(base_ro + 3, col, delivery)
+                _set_cell(base_ro + 4, col, inv)
+
+                sum_shift1 += prod1
+                sum_shift2 += prod2
+                sum_output += output
+
+            _set_cell(base_ro, 9, sum_shift1 if sum_shift1 > 0 else None)
+            _set_cell(base_ro + 1, 9, sum_shift2 if sum_shift2 > 0 else None)
+            _set_cell(base_ro + 2, 9, sum_output)
+            _set_cell(base_ro + 3, 9, pi.get("total_delivery", 0))
+
+        start_date_val = date.fromisoformat(daily_results[0]["date"])
+        ws.cell(row=3, column=4, value=start_date_val).number_format = "m/d"
+        num_weeks = (num_days + 6) // 7
+
+        for w in range(num_weeks):
+            w_start = COL_START + w * 7
+            w_end = min(COL_START + (w + 1) * 7 - 1, last_date_col)
+            if w_start <= w_end:
+                if w_start < w_end:
+                    start_ref = f"{get_column_letter(w_start)}1"
+                    end_ref = f"{get_column_letter(w_end)}1"
+                    ws.merge_cells(f"{start_ref}:{end_ref}")
+                week_num = (start_date_val + timedelta(weeks=w)).isocalendar()[1]
+                cell = ws.cell(row=1, column=w_start, value=f"{week_num}周")
+                ref = style_template.get((0, COL_START))
+                if ref:
+                    cell.font = copy(ref.font)
+                    cell.alignment = copy(ref.alignment)
+
+        for i in range(num_days):
+            col = COL_START + i
+            d = start_date_val + timedelta(days=i)
+            ws.cell(row=2, column=col, value=d).number_format = "m/d"
+            ws.cell(row=3, column=col, value=WEEKDAYS[d.weekday()])
+
+        for i in range(num_days):
+            col = COL_START + i
             dr = daily_results[i]
-
-            d = dr.get("date", "")
-            if d:
-                dt = date.fromisoformat(d) if isinstance(d, str) else d
-                ws.cell(row=2, column=col, value=dt)
-                ws.cell(row=2, column=col).font = TEMPLATE_FONT
-                ws.cell(row=2, column=col).border = TEMPLATE_BORDER
-                ws.cell(row=2, column=col).alignment = TEMPLATE_ALIGNMENT
-                ws.cell(row=2, column=col).number_format = "m/d"
-                ws.cell(row=3, column=col, value=WEEKDAYS[dt.weekday()])
-                ws.cell(row=3, column=col).font = TEMPLATE_FONT
-                ws.cell(row=3, column=col).border = TEMPLATE_BORDER
-                ws.cell(row=3, column=col).alignment = TEMPLATE_ALIGNMENT
-
-            is_rest_day = dr.get("is_rest", False)
-            if is_rest_day:
-                pink_fill = PatternFill(start_color="FFE0E0", end_color="FFE0E0", fill_type="solid")
+            if dr.get("is_rest", False):
                 ws.cell(row=2, column=col).fill = pink_fill
                 ws.cell(row=3, column=col).fill = pink_fill
 
-            prod1_1 = dr.get("prod1_1", 0)
-            prod2_1 = dr.get("prod2_1", 0)
-            output_1 = dr.get("daily_output_1", 0)
-            delivery_1 = dr.get("daily_delivery_1", 0)
-            inv_1 = dr.get("closing_inventory_1", 0)
+        total_rows = HEADER_ROWS + total_data_rows
+        cell_font = Font(name="宋体", size=9)
+        cell_alignment = Alignment(horizontal="center", vertical="center")
+        thin_border = Border(
+            left=Side(style="thin"),
+            right=Side(style="thin"),
+            top=Side(style="thin"),
+            bottom=Side(style="thin"),
+        )
+        for r in range(1, total_rows + 1):
+            for c in range(COL_START, last_date_col + 1):
+                cell = ws.cell(row=r, column=c)
+                cell.font = copy(cell_font)
+                cell.border = copy(thin_border)
+                cell.alignment = copy(cell_alignment)
 
-            prod1_2 = dr.get("prod1_2", 0)
-            prod2_2 = dr.get("prod2_2", 0)
-            output_2 = dr.get("daily_output_2", 0)
-            delivery_2 = dr.get("daily_delivery_2", 0)
-            inv_2 = dr.get("closing_inventory_2", 0)
+        for w in range(num_weeks):
+            w_start = COL_START + w * 7
+            cell = ws.cell(row=1, column=w_start)
+            cell.font = copy(cell_font)
+            cell.border = copy(thin_border)
+            cell.alignment = copy(cell_alignment)
 
-            shift1_1 = dr.get("shift1_1", 0)
-            shift2_1 = dr.get("shift2_1", 0)
-            shift1_2 = dr.get("shift1_2", 0)
-            shift2_2 = dr.get("shift2_2", 0)
-
-            day_data = [
-                (4, prod1_1), (5, prod2_1),
-                (6, output_1), (7, delivery_1), (8, inv_1),
-                (9, prod1_2), (10, prod2_2),
-                (11, output_2), (12, delivery_2), (13, inv_2),
-            ]
-            for row, val in day_data:
-                cell = ws.cell(row=row, column=col)
-                if row in ROW_FILLS:
-                    cell.fill = ROW_FILLS[row]
-                cell.font = TEMPLATE_FONT
-                cell.border = TEMPLATE_BORDER
-                cell.alignment = TEMPLATE_ALIGNMENT
-                if row in ab_rows and val == 0:
-                    cell.value = None
-                else:
-                    cell.value = val
-
-            sum_1a += prod1_1
-            sum_1b += prod2_1
-            sum_1_prod += output_1
-            sum_2a += prod1_2
-            sum_2b += prod2_2
-            sum_2_prod += output_2
-            sum_shift1_1 += shift1_1
-            sum_shift2_1 += shift2_1
-            sum_shift1_2 += shift1_2
-            sum_shift2_2 += shift2_2
-
-        # ── 合计列（I 列 = 第 9 列，模板固定） ──
-        total_data = [
-            (4, sum_1a), (5, sum_1b),
-            (6, sum_1_prod),
-            (9, sum_2a), (10, sum_2b),
-            (11, sum_2_prod),
-        ]
-        for row, val in total_data:
-            if row in ab_rows and val == 0:
-                ws.cell(row=row, column=9, value=None)
-            else:
-                ws.cell(row=row, column=9, value=val)
-
-        # ── 班次合计列（紧贴最后一天之后） ──
-        ws.cell(row=1, column=bg_col).value = None
-        ws.cell(row=2, column=bg_col).border = TEMPLATE_BORDER
-        ws.cell(row=3, column=bg_col).border = TEMPLATE_BORDER
-        ws.merge_cells(start_row=2, start_column=bg_col, end_row=3, end_column=bg_col)
-        ws.cell(row=2, column=bg_col, value="班次")
-        ws.cell(row=2, column=bg_col).font = Font(name="宋体", size=9, bold=True)
-        ws.cell(row=2, column=bg_col).alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-
-        for row in range(4, 14):
-            cell = ws.cell(row=row, column=bg_col)
-            cell.fill = PatternFill(fill_type=None)
-            cell.font = TEMPLATE_FONT
-            cell.border = TEMPLATE_BORDER
-            cell.alignment = TEMPLATE_ALIGNMENT
-
-        bg_data = [
-            (4, sum_shift1_1),
-            (5, sum_shift2_1),
-            (6, sum_shift1_1 + sum_shift2_1),
-            (9, sum_shift1_2),
-            (10, sum_shift2_2),
-            (11, sum_shift1_2 + sum_shift2_2),
-        ]
-        for row, val in bg_data:
-            cell = ws.cell(row=row, column=bg_col)
-            if row in ab_rows and val == 0:
-                cell.value = None
-            else:
-                cell.value = val
-
-        # ── 周数合并行（第 1 行） ──
-        first_date_str = daily_results[0]["date"]
-        first_date = date.fromisoformat(first_date_str) if isinstance(first_date_str, str) else None
-        if first_date:
-            ws.cell(row=3, column=4, value=f"{first_date.month}/{first_date.day}")
-            ws.cell(row=3, column=4).font = Font(name="宋体", size=9, color="666666")
-
-        for week_start in range(0, days_to_write, 7):
-            ws_col = start_col + week_start
-            ws_end = min(ws_col + 6, end_col)
-            ws.merge_cells(start_row=1, start_column=ws_col, end_row=1, end_column=ws_end)
-            if first_date:
-                cur_date = date.fromordinal(first_date.toordinal() + week_start)
-                ws.cell(row=1, column=ws_col, value=f"{cur_date.isocalendar()[1]}周")
-            ws.cell(row=1, column=ws_col).font = TEMPLATE_FONT
-            ws.cell(row=1, column=ws_col).border = TEMPLATE_BORDER
-            ws.cell(row=1, column=ws_col).alignment = TEMPLATE_ALIGNMENT
-
-        ws["A4"].font = Font(name="宋体", size=9)
-        ws["A9"].font = Font(name="宋体", size=9)
-
-        # ── 清除实际使用范围之外的残留格式（边框/背景等） ──
-        max_used_row = 13
-        max_used_col = bg_col
-        for r in range(1, ws.max_row + 1):
-            for c in range(1, ws.max_column + 1):
-                if r > max_used_row or c > max_used_col:
-                    _clear_cell(ws.cell(row=r, column=c))
+        max_col = COL_START + num_days
+        ws.freeze_panes = ws.cell(row=HEADER_ROWS + 1, column=COL_START)
 
         buffer = BytesIO()
         wb.save(buffer)

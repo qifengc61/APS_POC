@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import date
 from ..database import get_db
-from ..models.db_models import DeliveryPlan, ProductionLine, LineProduct
+from ..models.db_models import DeliveryPlan, ProductionLine, LineProduct, PlanMaterial
 
 router = APIRouter(prefix="/api/delivery-plans", tags=["delivery_plans"])
 
@@ -20,7 +20,7 @@ class PlanMaterialItem(BaseModel):
 class DeliveryPlanCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     line_id: int
-    materials: List[PlanMaterialItem] = Field(..., min_length=2, max_length=2)
+    materials: List[PlanMaterialItem] = Field(..., min_length=1, max_length=6)
     start_date: date
     end_date: date
 
@@ -53,37 +53,26 @@ class DeliveryPlanOut(BaseModel):
 
 
 def _build_plan_out(plan: DeliveryPlan) -> DeliveryPlanOut:
-    lpa = plan.line_product_1
-    lpb = plan.line_product_2
-    dd_1 = plan.daily_deliveries_1 or ""
-    dd_2 = plan.daily_deliveries_2 or ""
+    material_outs = []
+    for pm in plan.materials:
+        lp = pm.line_product
+        dd = pm.daily_deliveries or ""
+        material_outs.append(PlanMaterialOut(
+            line_product_id=pm.line_product_id,
+            product_name=lp.product.name,
+            product_code=lp.product.code or "",
+            initial_inventory=pm.initial_inventory,
+            safety_stock=lp.safety_stock,
+            rated_output=lp.rated_output,
+            total_delivery=pm.total_delivery,
+            daily_deliveries=dd,
+        ))
     return DeliveryPlanOut(
         id=plan.id,
         name=plan.name,
         line_id=plan.line_id,
         line_name=plan.line.name,
-        materials=[
-            PlanMaterialOut(
-                line_product_id=plan.product_1_id,
-                product_name=lpa.product.name,
-                product_code=lpa.product.code or "",
-                initial_inventory=plan.initial_inventory_1,
-                safety_stock=lpa.safety_stock,
-                rated_output=lpa.rated_output,
-                total_delivery=plan.total_delivery_1,
-                daily_deliveries=dd_1,
-            ),
-            PlanMaterialOut(
-                line_product_id=plan.product_2_id,
-                product_name=lpb.product.name,
-                product_code=lpb.product.code or "",
-                initial_inventory=plan.initial_inventory_2,
-                safety_stock=lpb.safety_stock,
-                rated_output=lpb.rated_output,
-                total_delivery=plan.total_delivery_2,
-                daily_deliveries=dd_2,
-            ),
-        ],
+        materials=material_outs,
         start_date=plan.start_date,
         end_date=plan.end_date,
     )
@@ -130,7 +119,6 @@ def create_plan(data: DeliveryPlanCreate, db: Session = Depends(get_db)):
 
     days = (data.end_date - data.start_date).days + 1
 
-    lps = []
     for m in data.materials:
         lp = db.query(LineProduct).filter(LineProduct.id == m.line_product_id).first()
         if not lp:
@@ -141,35 +129,32 @@ def create_plan(data: DeliveryPlanCreate, db: Session = Depends(get_db)):
             parts = m.daily_deliveries.strip().split()
             if len(parts) != days:
                 raise HTTPException(status_code=400, detail=f"物料 '{lp.product.name}' 的每日交货量数量({len(parts)})与排产天数({days})不匹配")
-        lps.append(lp)
-
-    total_1 = data.materials[0].total_delivery
-    total_2 = data.materials[1].total_delivery
-    dd_json_1 = _parse_daily_deliveries(data.materials[0].daily_deliveries)
-    dd_json_2 = _parse_daily_deliveries(data.materials[1].daily_deliveries)
-
-    if dd_json_1:
-        vals = json.loads(dd_json_1)
-        total_1 = sum(vals)
-    if dd_json_2:
-        vals = json.loads(dd_json_2)
-        total_2 = sum(vals)
 
     plan = DeliveryPlan(
         name=data.name,
         line_id=data.line_id,
-        product_1_id=data.materials[0].line_product_id,
-        product_2_id=data.materials[1].line_product_id,
-        initial_inventory_1=data.materials[0].initial_inventory,
-        initial_inventory_2=data.materials[1].initial_inventory,
         start_date=data.start_date,
         end_date=data.end_date,
-        total_delivery_1=total_1,
-        total_delivery_2=total_2,
-        daily_deliveries_1=dd_json_1 or None,
-        daily_deliveries_2=dd_json_2 or None,
     )
     db.add(plan)
+    db.flush()
+
+    for idx, m in enumerate(data.materials):
+        dd_json = _parse_daily_deliveries(m.daily_deliveries)
+        total = m.total_delivery
+        if dd_json:
+            vals = json.loads(dd_json)
+            total = sum(vals)
+        pm = PlanMaterial(
+            plan_id=plan.id,
+            line_product_id=m.line_product_id,
+            initial_inventory=m.initial_inventory,
+            total_delivery=total,
+            daily_deliveries=dd_json or None,
+            sort_order=idx,
+        )
+        db.add(pm)
+
     db.commit()
     db.refresh(plan)
     return _build_plan_out(plan)

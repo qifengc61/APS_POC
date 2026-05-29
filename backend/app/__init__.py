@@ -8,7 +8,7 @@ from .database import init_db
 app = FastAPI(
     title="智能排产POC系统",
     description="基于 Google OR-Tools CP-SAT 约束优化的智能生产排产系统",
-    version="2.0.0",
+    version="3.0.0",
 )
 
 app.add_middleware(
@@ -31,4 +31,4 @@ def on_startup():
 
 @app.get("/")
 async def root():
-    return {"message": "智能排产POC系统API", "version": "2.0.0"}
+    return {"message": "智能排产POC系统API", "version": "3.0.0"}

@@ -3,6 +3,8 @@ import { listDeliveryPlans, calculateScheduleByPlan, scheduleExport } from '../a
 import ResultTable from '../components/ResultTable'
 import ResultCharts from '../components/ResultCharts'
 
+const MATERIAL_COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2']
+
 const defaultConfig = {
   avoid_rest_work_weight: 50,
   max_consecutive_work_days: 7,
@@ -18,6 +20,7 @@ export default function SchedulingPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [debugMode, setDebugMode] = useState(false)
+  const [activeProductIdx, setActiveProductIdx] = useState(0)
   const [dots, setDots] = useState('')
   const timerRef = useRef(null)
 
@@ -46,6 +49,7 @@ export default function SchedulingPage() {
     setSelectedPlan(plan || null)
     setResult(null)
     setError(null)
+    setActiveProductIdx(0)
   }
 
   const handleConfigChange = (key, value) => {
@@ -63,6 +67,7 @@ export default function SchedulingPage() {
     setLoading(true)
     setError(null)
     setResult(null)
+    setActiveProductIdx(0)
 
     try {
       const data = await calculateScheduleByPlan(parseInt(selectedPlanId), buildApiConfig())
@@ -82,29 +87,24 @@ export default function SchedulingPage() {
   const handleExport = async () => {
     if (!result || !selectedPlan) return
     try {
-      const planInfo = {
-        product_1: {
-          code: selectedPlan.materials?.[0]?.product_code || selectedPlan.materials?.[0]?.product_name || '',
-          name: selectedPlan.materials?.[0]?.product_name || '',
-          initial_inventory: selectedPlan.materials?.[0]?.initial_inventory || 0,
-          safety_stock: selectedPlan.materials?.[0]?.safety_stock || 0,
-          rated_output: selectedPlan.materials?.[0]?.rated_output || 0,
-          total_delivery: selectedPlan.materials?.[0]?.total_delivery || 0,
-        },
-        product_2: {
-          code: selectedPlan.materials?.[1]?.product_code || selectedPlan.materials?.[1]?.product_name || '',
-          name: selectedPlan.materials?.[1]?.product_name || '',
-          initial_inventory: selectedPlan.materials?.[1]?.initial_inventory || 0,
-          safety_stock: selectedPlan.materials?.[1]?.safety_stock || 0,
-          rated_output: selectedPlan.materials?.[1]?.rated_output || 0,
-          total_delivery: selectedPlan.materials?.[1]?.total_delivery || 0,
-        },
-      }
+      const planInfo = {}
+      selectedPlan.materials.forEach((m, idx) => {
+        planInfo[`product_${idx + 1}`] = {
+          code: m.product_code || m.product_name || '',
+          name: m.product_name || '',
+          initial_inventory: m.initial_inventory || 0,
+          safety_stock: m.safety_stock || 0,
+          rated_output: m.rated_output || 0,
+          total_delivery: m.total_delivery || 0,
+        }
+      })
       await scheduleExport(result, planInfo)
     } catch (err) {
       alert('导出失败: ' + (err.message || '未知错误'))
     }
   }
+
+  const numProducts = result?.num_products || selectedPlan?.materials?.length || 0
 
   const inputStyle = {
     width: '100%', padding: '8px 12px', border: '1px solid #d1d5db',
@@ -139,14 +139,14 @@ export default function SchedulingPage() {
                   <div>日期：<b>{selectedPlan.start_date}</b> ~ <b>{selectedPlan.end_date}</b></div>
                   <div style={{ borderTop: '1px solid #e5e7eb', margin: '6px 0' }} />
                   {selectedPlan.materials && selectedPlan.materials.map((m, idx) => (
-                    <div key={idx} style={{ color: idx === 0 ? '#2563eb' : '#059669' }}>
+                    <div key={idx} style={{ color: MATERIAL_COLORS[idx % MATERIAL_COLORS.length] }}>
                       <span style={{
                         display: 'inline-block', width: '16px', height: '16px', lineHeight: '16px',
                         textAlign: 'center', borderRadius: '3px', fontSize: '11px', fontWeight: '700',
-                        color: '#fff', backgroundColor: idx === 0 ? '#2563eb' : '#059669',
+                        color: '#fff', backgroundColor: MATERIAL_COLORS[idx % MATERIAL_COLORS.length],
                         marginRight: '4px',
                       }}>
-                        {idx === 0 ? '1' : '2'}
+                        {idx + 1}
                       </span>
                       {m.product_name}
                       <div style={{ paddingLeft: '20px', color: '#9ca3af' }}>库存{m.initial_inventory} / 安全{m.safety_stock} / 产量{m.rated_output}</div>
@@ -268,7 +268,7 @@ export default function SchedulingPage() {
               <div style={{ fontSize: '16px', color: '#6b7280', display: 'flex', justifyContent: 'center' }}>
                 <span>正在计算排产方案{dots}</span>
               </div>
-              <div style={{ fontSize: '13px', color: '#9ca3af', marginTop: '8px' }}>OR-Tools CP-SAT 双物料求解器优化中</div>
+              <div style={{ fontSize: '13px', color: '#9ca3af', marginTop: '8px' }}>OR-Tools CP-SAT 多物料求解器优化中</div>
             </div>
           )}
 
@@ -305,10 +305,35 @@ export default function SchedulingPage() {
                   </span>
                 </div>
               )}
-              <ResultTable result={result} onExport={handleExport} />
-              <ResultCharts result={result}
-                safetyStock1={selectedPlan?.materials?.[0]?.safety_stock || 0}
-                safetyStock2={selectedPlan?.materials?.[1]?.safety_stock || 0}
+
+              {numProducts > 1 && (
+                <div style={{
+                  marginBottom: '12px',
+                  backgroundColor: '#fff', padding: '10px 16px', borderRadius: '8px',
+                  border: '1px solid #e5e7eb',
+                }}>
+                  <select
+                    value={activeProductIdx}
+                    onChange={e => setActiveProductIdx(parseInt(e.target.value))}
+                    style={{
+                      padding: '6px 12px', border: '1px solid #d1d5db', borderRadius: '6px',
+                      fontSize: '13px', outline: 'none', cursor: 'pointer', width: '100%',
+                    }}
+                  >
+                    {selectedPlan?.materials?.map((m, idx) => (
+                      <option key={idx} value={idx}>
+                        {idx + 1} - {m.product_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <ResultTable result={result} onExport={handleExport} activeProductIdx={activeProductIdx} />
+              <ResultCharts
+                result={result}
+                activeProductIdx={activeProductIdx}
+                materials={selectedPlan?.materials || []}
               />
             </>
           )}

@@ -19,8 +19,7 @@ class ProductParams(BaseModel):
 
 
 class SchedulingParams(BaseModel):
-    product_1: ProductParams = Field(..., description="物品1参数")
-    product_2: ProductParams = Field(..., description="物品2参数")
+    products: List[ProductParams] = Field(..., min_length=1, max_length=6, description="物品参数列表(1-6个)")
     start_date: date = Field(..., description="排产开始日期")
     end_date: date = Field(..., description="排产结束日期")
     holidays: List[str] = Field(default_factory=list, description="节假日列表(YYYY-MM-DD)")
@@ -42,55 +41,3 @@ class AlgorithmConfig(BaseModel):
 class SchedulingRequest(BaseModel):
     params: SchedulingParams
     config: AlgorithmConfig = AlgorithmConfig()
-
-
-class DailyResult(BaseModel):
-    date: str
-    is_holiday: bool
-    is_rest: bool
-    is_adjusted_workday: bool
-    combo_1: int
-    shift1_1: float
-    shift2_1: float
-    shift_label_1: str
-    prod1_1: int
-    prod2_1: int
-    prod_label_1: str
-    work_hours_1: float
-    daily_output_1: int
-    daily_delivery_1: int
-    closing_inventory_1: int
-    inventory_violation_1: bool
-    combo_2: int
-    shift1_2: float
-    shift2_2: float
-    shift_label_2: str
-    prod1_2: int
-    prod2_2: int
-    prod_label_2: str
-    work_hours_2: float
-    daily_output_2: int
-    daily_delivery_2: int
-    closing_inventory_2: int
-    inventory_violation_2: bool
-    total_work_hours: float
-
-
-class SchedulingResult(BaseModel):
-    success: bool
-    message: str
-    daily_results: List[DailyResult]
-    total_production_days: int
-    rest_days_occupied: int
-    total_production_days_1: int
-    min_inventory_1: int
-    final_inventory_1: int
-    delivery_fulfilled_1: bool
-    holiday_production_days_1: int
-    total_production_days_2: int
-    min_inventory_2: int
-    final_inventory_2: int
-    delivery_fulfilled_2: bool
-    holiday_production_days_2: int
-    solver_status: str = ""
-    solve_time: float = 0.0

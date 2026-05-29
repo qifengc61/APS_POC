@@ -5,9 +5,9 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from ..models.schemas import SchedulingRequest, SchedulingResult, ProductParams, SchedulingParams, AlgorithmConfig
+from ..models.schemas import SchedulingRequest, ProductParams, SchedulingParams, AlgorithmConfig
 from ..services import SchedulingService
-from ..algorithm import TwoProductScheduler
+from ..algorithm.scheduler import MultiProductScheduler
 from ..database import get_db
 from ..models.db_models import DeliveryPlan
 
@@ -31,7 +31,7 @@ def _format_error(e: Exception) -> str:
     return msg
 
 
-@router.post("/schedule", response_model=SchedulingResult)
+@router.post("/schedule")
 async def calculate_schedule(request: SchedulingRequest):
     try:
         params = request.params
@@ -51,15 +51,12 @@ class ScheduleByPlanRequest(BaseModel):
     config: AlgorithmConfig = AlgorithmConfig()
 
 
-@router.post("/schedule/by-plan", response_model=SchedulingResult)
+@router.post("/schedule/by-plan")
 async def calculate_schedule_by_plan(request: ScheduleByPlanRequest, db: Session = Depends(get_db)):
     try:
         plan = db.query(DeliveryPlan).filter(DeliveryPlan.id == request.delivery_plan_id).first()
         if not plan:
             raise HTTPException(status_code=404, detail="交货计划不存在")
-
-        lpa = plan.line_product_1
-        lpb = plan.line_product_2
 
         def _parse_dd(dd_str, start_date, end_date):
             if not dd_str:
@@ -73,23 +70,20 @@ async def calculate_schedule_by_plan(request: ScheduleByPlanRequest, db: Session
                 return None
             return [{"date": (start_date + timedelta(days=i)).isoformat(), "quantity": vals[i]} for i in range(days)]
 
-        product_1 = ProductParams(
-            initial_inventory=plan.initial_inventory_1,
-            safety_stock=lpa.safety_stock,
-            rated_output=lpa.rated_output,
-            total_delivery=plan.total_delivery_1,
-            daily_deliveries=_parse_dd(plan.daily_deliveries_1, plan.start_date, plan.end_date),
-        )
-        product_2 = ProductParams(
-            initial_inventory=plan.initial_inventory_2,
-            safety_stock=lpb.safety_stock,
-            rated_output=lpb.rated_output,
-            total_delivery=plan.total_delivery_2,
-            daily_deliveries=_parse_dd(plan.daily_deliveries_2, plan.start_date, plan.end_date),
-        )
+        product_params_list = []
+        for pm in plan.materials:
+            lp = pm.line_product
+            pp = ProductParams(
+                initial_inventory=pm.initial_inventory,
+                safety_stock=lp.safety_stock,
+                rated_output=lp.rated_output,
+                total_delivery=pm.total_delivery,
+                daily_deliveries=_parse_dd(pm.daily_deliveries, plan.start_date, plan.end_date),
+            )
+            product_params_list.append(pp)
+
         params = SchedulingParams(
-            product_1=product_1,
-            product_2=product_2,
+            products=product_params_list,
             start_date=plan.start_date,
             end_date=plan.end_date,
         )
@@ -109,18 +103,18 @@ async def validate_params(request: SchedulingRequest):
     try:
         params = request.params
         holidays = _parse_holidays(params.holidays)
-        scheduler = TwoProductScheduler(
-            product_1=params.product_1,
-            product_2=params.product_2,
+        scheduler = MultiProductScheduler(
+            products=params.products,
             start_date=params.start_date,
             end_date=params.end_date,
             holidays=holidays,
         )
         work_days = sum(1 for i in range(scheduler.days) if not scheduler.rest_flags[i])
         rest_days = scheduler.days - work_days
-        max_capacity_all = scheduler.days * 3.0 * (params.product_1.rated_output + params.product_2.rated_output)
-        max_capacity_work = work_days * 3.0 * (params.product_1.rated_output + params.product_2.rated_output)
-        total_delivery = params.product_1.total_delivery + params.product_2.total_delivery
+        total_rated = sum(p.rated_output for p in params.products)
+        max_capacity_all = scheduler.days * 3.0 * total_rated
+        max_capacity_work = work_days * 3.0 * total_rated
+        total_delivery = sum(p.total_delivery for p in params.products)
         return {
             "valid": True,
             "message": "参数校验通过",

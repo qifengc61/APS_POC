@@ -1,21 +1,20 @@
-export default function ResultTable({ result, onExport }) {
+const MATERIAL_COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2']
+
+export default function ResultTable({ result, onExport, activeProductIdx = 0 }) {
   if (!result || !result.daily_results || result.daily_results.length === 0) return null
 
+  const pidx = activeProductIdx + 1
+  const color = MATERIAL_COLORS[activeProductIdx % MATERIAL_COLORS.length]
+
   const columns = [
-    { key: 'date', label: '日期', p: '7%' },
+    { key: 'date', label: '日期', p: '8%' },
     { key: 'is_rest', label: '休', p: '4%' },
-    { key: 'shift_label_1', label: '1-班次', p: '9%' },
-    { key: 'work_hours_1', label: '1-工时', p: '5.5%' },
-    { key: 'daily_output_1', label: '1-产量', p: '6%' },
-    { key: 'daily_delivery_1', label: '1-交货', p: '6%' },
-    { key: 'closing_inventory_1', label: '1-库存', p: '7%' },
-    { key: 'inventory_violation_1', label: '1-异常', p: '5%' },
-    { key: 'shift_label_2', label: '2-班次', p: '9%' },
-    { key: 'work_hours_2', label: '2-工时', p: '5.5%' },
-    { key: 'daily_output_2', label: '2-产量', p: '6%' },
-    { key: 'daily_delivery_2', label: '2-交货', p: '6%' },
-    { key: 'closing_inventory_2', label: '2-库存', p: '7%' },
-    { key: 'inventory_violation_2', label: '2-异常', p: '5%' },
+    { key: `shift_label_${pidx}`, label: `${pidx}-班次`, p: '10%', color },
+    { key: `work_hours_${pidx}`, label: `${pidx}-工时`, p: '6%', color },
+    { key: `daily_output_${pidx}`, label: `${pidx}-产量`, p: '6%', color },
+    { key: `daily_delivery_${pidx}`, label: `${pidx}-交货`, p: '6%', color },
+    { key: `closing_inventory_${pidx}`, label: `${pidx}-库存`, p: '7%', color },
+    { key: `inventory_violation_${pidx}`, label: `${pidx}-异常`, p: '5%', color },
     { key: 'total_work_hours', label: '总工时', p: '7%' },
   ]
 
@@ -28,7 +27,7 @@ export default function ResultTable({ result, onExport }) {
 
   return (
     <div style={{ backgroundColor: '#fff', borderRadius: '10px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-      <div style={{ padding: '16px 20px 12px', borderBottom: '2px solid #3b82f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ padding: '16px 20px 12px', borderBottom: `2px solid ${color}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ margin: 0, fontSize: '16px', color: '#1f2937' }}>📋 排产结果明细</h3>
         {onExport && (
           <button onClick={onExport} style={{
@@ -48,7 +47,7 @@ export default function ResultTable({ result, onExport }) {
                 <th key={col.key} style={{
                   padding: '7px 4px', backgroundColor: '#f8fafc',
                   borderBottom: '2px solid #e2e8f0', textAlign: 'center',
-                  fontWeight: '600', color: '#475569',
+                  fontWeight: '600', color: col.color || '#475569',
                   position: 'sticky', top: 0, zIndex: 1,
                   width: col.p, whiteSpace: 'nowrap',
                 }}>
@@ -59,38 +58,35 @@ export default function ResultTable({ result, onExport }) {
           </thead>
           <tbody>
             {result.daily_results.map((row, idx) => {
-              const vio1 = row.inventory_violation_1
-              const vio2 = row.inventory_violation_2
+              const vioKey = `inventory_violation_${pidx}`
+              const vio = row[vioKey]
               const isRest = row.is_rest
-              const bgColor = vio1 || vio2 ? '#fef2f2' : isRest ? '#fff1f2' : ''
+              const bgColor = vio ? '#fef2f2' : isRest ? '#fff1f2' : ''
               return (
                 <tr key={idx} style={{ backgroundColor: bgColor, borderBottom: '1px solid #f1f5f9' }}>
                   {columns.map(col => {
                     let val = row[col.key]
-                    let color = '#374151'
+                    let textColor = '#374151'
                     let fontWeight = 'normal'
                     if (col.key === 'date') {
                       val = formatDate(val)
                     } else if (col.key === 'is_rest') {
                       val = isRest ? '🔴' : '\u2014'
-                    } else if (col.key === 'inventory_violation_1') {
-                      val = vio1 ? '⚠️' : '✅'
-                      if (vio1) color = '#dc2626'
-                    } else if (col.key === 'inventory_violation_2') {
-                      val = vio2 ? '⚠️' : '✅'
-                      if (vio2) color = '#dc2626'
-                    } else if (col.key === 'shift_label_1' || col.key === 'shift_label_2') {
-                      const prefix = col.key === 'shift_label_1' ? '1' : '2'
-                      const combo = row['combo_' + prefix]
+                    } else if (col.key === vioKey) {
+                      val = vio ? '⚠️' : '✅'
+                      if (vio) textColor = '#dc2626'
+                    } else if (col.key === `shift_label_${pidx}`) {
+                      const comboKey = `combo_${pidx}`
+                      const combo = row[comboKey]
                       if (isRest && combo > 0) {
-                        color = '#dc2626'
+                        textColor = '#dc2626'
                         fontWeight = '600'
                       }
                     }
                     return (
                       <td key={col.key} style={{
                         padding: '5px 4px', textAlign: 'center',
-                        color, fontWeight, whiteSpace: 'nowrap',
+                        color: textColor, fontWeight, whiteSpace: 'nowrap',
                         overflow: 'hidden', textOverflow: 'ellipsis',
                       }}>
                         {val}
