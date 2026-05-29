@@ -49,7 +49,9 @@ class SchedulingService:
         return scheduler.run()
 
     @staticmethod
-    def export_excel(result: dict, plan_info: dict = None) -> BytesIO:
+    def export_excel(result: dict, plan_info: list = None) -> BytesIO:
+        if plan_info and hasattr(plan_info[0], 'model_dump'):
+            plan_info = [p.model_dump() for p in plan_info]
         daily_results = result.get("daily_results", [])
         num_days = len(daily_results)
         num_products = result.get("num_products", 1)
@@ -89,7 +91,7 @@ class SchedulingService:
 
         for pidx in range(num_products):
             base_ro = pidx * DATA_ROWS
-            pi = (plan_info or {}).get(f"product_{pidx + 1}", {})
+            pi = (plan_info or [{}])[pidx] if isinstance(plan_info, list) else (plan_info or {}).get(f"product_{pidx + 1}", {})
 
             for ro in range(DATA_ROWS):
                 for c in range(1, COL_START):
@@ -134,13 +136,13 @@ class SchedulingService:
             for i in range(num_days):
                 col = COL_START + i
                 dr = daily_results[i]
-                pkey = pidx + 1
+                p = dr["products"][pidx]
 
-                prod1 = dr.get(f"prod1_{pkey}", 0)
-                prod2 = dr.get(f"prod2_{pkey}", 0)
-                output = dr.get(f"daily_output_{pkey}", 0)
-                delivery = dr.get(f"daily_delivery_{pkey}", 0)
-                inv = dr.get(f"closing_inventory_{pkey}", 0)
+                prod1 = p.get("prod1", 0)
+                prod2 = p.get("prod2", 0)
+                output = p.get("daily_output", 0)
+                delivery = p.get("daily_delivery", 0)
+                inv = p.get("closing_inventory", 0)
 
                 _set_cell(base_ro, col, prod1 if prod1 > 0 else None)
                 _set_cell(base_ro + 1, col, prod2 if prod2 > 0 else None)

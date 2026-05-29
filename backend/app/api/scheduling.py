@@ -140,7 +140,7 @@ class ExportResultItem(BaseModel):
 
 class ExportRequest(BaseModel):
     result: dict
-    plan_info: Optional[dict] = None
+    plan_info: Optional[List[ExportResultItem]] = None
 
 
 @router.post("/schedule/export")

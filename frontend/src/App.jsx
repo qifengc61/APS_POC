@@ -25,7 +25,7 @@ function Sidebar() {
         <span style={{ fontSize: '24px' }}>🏭</span>
         <div>
           <div style={{ color: '#f1f5f9', fontSize: '15px', fontWeight: '700' }}>智能排产</div>
-          <div style={{ color: '#64748b', fontSize: '11px' }}>V2.0</div>
+          <div style={{ color: '#64748b', fontSize: '11px' }}>V2.1</div>
         </div>
       </div>
 
@@ -79,7 +79,7 @@ function App() {
             textAlign: 'center', padding: '12px', color: '#9ca3af', fontSize: '12px',
             borderTop: '1px solid #e5e7eb', backgroundColor: '#fff',
           }}>
-            智能排产系统 V2.0 © 2026 | OR-Tools CP-SAT 约束优化引擎
+            智能排产系统 V2.1 © 2026 | OR-Tools CP-SAT 约束优化引擎
           </footer>
         </div>
       </div>

@@ -8,39 +8,45 @@ export default function ResultCharts({ result, activeProductIdx = 0, materials =
 
   const [overviewIdx, setOverviewIdx] = useState(0)
 
-  const pidx = activeProductIdx + 1
   const color = MATERIAL_COLORS[activeProductIdx % MATERIAL_COLORS.length]
-  const productName = materials[activeProductIdx]?.product_name || `物料${pidx}`
+  const productName = materials[activeProductIdx]?.product_name || `物料${activeProductIdx + 1}`
   const safetyStock = materials[activeProductIdx]?.safety_stock || 0
   const numProducts = result.num_products || materials.length || 1
+  const productStats = result.product_stats || []
 
   const outputData = result.daily_results.map(dr => {
+    const p = dr.products?.[activeProductIdx]
     const entry = { date: dr.date.slice(5) }
-    entry[`${productName}-产量`] = dr[`daily_output_${pidx}`]
-    entry[`${productName}-交货`] = dr[`daily_delivery_${pidx}`]
+    entry[`${productName}-产量`] = p?.daily_output
+    entry[`${productName}-交货`] = p?.daily_delivery
     return entry
   })
 
-  const inventoryData = result.daily_results.map(dr => ({
-    date: dr.date.slice(5),
-    [`${productName}-库存`]: dr[`closing_inventory_${pidx}`],
-  }))
+  const inventoryData = result.daily_results.map(dr => {
+    const p = dr.products?.[activeProductIdx]
+    return {
+      date: dr.date.slice(5),
+      [`${productName}-库存`]: p?.closing_inventory,
+    }
+  })
 
   const shiftData = result.daily_results.map(dr => {
     const entry = { date: dr.date.slice(5), is_rest: dr.is_rest }
-    for (let i = 1; i <= numProducts; i++) {
-      const name = materials[i - 1]?.product_name || `物料${i}`
-      entry[`${name}-工时`] = dr[`work_hours_${i}`]
+    for (let i = 0; i < numProducts; i++) {
+      const name = materials[i]?.product_name || `物料${i + 1}`
+      entry[`${name}-工时`] = dr.products?.[i]?.work_hours
     }
     return entry
   })
 
   const shiftBarEntries = []
-  for (let i = 1; i <= numProducts; i++) {
-    const name = materials[i - 1]?.product_name || `物料${i}`
-    const barColor = MATERIAL_COLORS[(i - 1) % MATERIAL_COLORS.length]
-    shiftBarEntries.push(<Bar key={i} dataKey={`${name}-工时`} stackId="a" fill={barColor} radius={i === numProducts ? [4, 4, 0, 0] : [0, 0, 0, 0]} />)
+  for (let i = 0; i < numProducts; i++) {
+    const name = materials[i]?.product_name || `物料${i + 1}`
+    const barColor = MATERIAL_COLORS[i % MATERIAL_COLORS.length]
+    shiftBarEntries.push(<Bar key={i} dataKey={`${name}-工时`} stackId="a" fill={barColor} radius={i === numProducts - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />)
   }
+
+  const stats = productStats[overviewIdx] || {}
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' }}>
@@ -113,18 +119,17 @@ export default function ResultCharts({ result, activeProductIdx = 0, materials =
           <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #e5e7eb', margin: '4px 0' }} />
           {(() => {
             const m = materials[overviewIdx]
-            const pKey = overviewIdx + 1
             const mColor = MATERIAL_COLORS[overviewIdx % MATERIAL_COLORS.length]
             return (
               <div key={overviewIdx} style={{ gridColumn: '1 / -1' }}>
                 <div style={{ fontSize: '12px', fontWeight: '600', color: mColor, marginBottom: '6px', paddingLeft: '4px', borderLeft: `3px solid ${mColor}` }}>
-                  {m?.product_name || `物料${pKey}`}
+                  {m?.product_name || `物料${overviewIdx + 1}`}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <StatCard label="生产天数" value={result[`total_production_days_${pKey}`]} unit="天" color={mColor} />
-                  <StatCard label="休息日生产" value={result[`holiday_production_days_${pKey}`]} unit="天" color="#ef4444" />
-                  <StatCard label="库存最小值" value={result[`min_inventory_${pKey}`]} unit="" color="#10b981" />
-                  <StatCard label="最终结存" value={result[`final_inventory_${pKey}`] ?? '—'} unit="" color="#8b5cf6" />
+                  <StatCard label="生产天数" value={stats.total_production_days} unit="天" color={mColor} />
+                  <StatCard label="休息日生产" value={stats.holiday_production_days} unit="天" color="#ef4444" />
+                  <StatCard label="库存最小值" value={stats.min_inventory} unit="" color="#10b981" />
+                  <StatCard label="最终结存" value={stats.final_inventory ?? '—'} unit="" color="#8b5cf6" />
                 </div>
               </div>
             )

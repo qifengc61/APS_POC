@@ -87,17 +87,14 @@ export default function SchedulingPage() {
   const handleExport = async () => {
     if (!result || !selectedPlan) return
     try {
-      const planInfo = {}
-      selectedPlan.materials.forEach((m, idx) => {
-        planInfo[`product_${idx + 1}`] = {
-          code: m.product_code || m.product_name || '',
-          name: m.product_name || '',
-          initial_inventory: m.initial_inventory || 0,
-          safety_stock: m.safety_stock || 0,
-          rated_output: m.rated_output || 0,
-          total_delivery: m.total_delivery || 0,
-        }
-      })
+      const planInfo = selectedPlan.materials.map((m) => ({
+        code: m.product_code || m.product_name || '',
+        name: m.product_name || '',
+        initial_inventory: m.initial_inventory || 0,
+        safety_stock: m.safety_stock || 0,
+        rated_output: m.rated_output || 0,
+        total_delivery: m.total_delivery || 0,
+      }))
       await scheduleExport(result, planInfo)
     } catch (err) {
       alert('导出失败: ' + (err.message || '未知错误'))

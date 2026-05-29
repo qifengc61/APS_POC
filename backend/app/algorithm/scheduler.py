@@ -320,15 +320,19 @@ class MultiProductScheduler:
             "total_production_days": 0,
             "rest_days_occupied": 0,
             "num_products": self.num_products,
+            "product_stats": [
+                {
+                    "total_production_days": 0,
+                    "min_inventory": 0,
+                    "final_inventory": 0,
+                    "delivery_fulfilled": False,
+                    "holiday_production_days": 0,
+                }
+                for _ in range(self.num_products)
+            ],
             "solver_status": status_name,
             "solve_time": solve_time,
         }
-        for pidx in range(self.num_products):
-            no_result[f"total_production_days_{pidx + 1}"] = 0
-            no_result[f"min_inventory_{pidx + 1}"] = 0
-            no_result[f"final_inventory_{pidx + 1}"] = 0
-            no_result[f"delivery_fulfilled_{pidx + 1}"] = False
-            no_result[f"holiday_production_days_{pidx + 1}"] = 0
         return no_result
 
     def _build_result(self, all_combos: list) -> dict:
@@ -348,6 +352,7 @@ class MultiProductScheduler:
                 "is_rest": self.rest_flags[i],
                 "is_adjusted_workday": self.calendar_adjusted_workday_flags[i],
                 "total_work_hours": 0,
+                "products": [],
             }
 
             for pidx in range(self.num_products):
@@ -366,18 +371,20 @@ class MultiProductScheduler:
                 prod_label = self._fmt_prod(prod1, prod2, s1, s2)
                 work_hours = (s1 + s2) * 8
 
-                day_data[f"combo_{pidx + 1}"] = c
-                day_data[f"shift1_{pidx + 1}"] = s1
-                day_data[f"shift2_{pidx + 1}"] = s2
-                day_data[f"shift_label_{pidx + 1}"] = shift_label
-                day_data[f"prod1_{pidx + 1}"] = prod1
-                day_data[f"prod2_{pidx + 1}"] = prod2
-                day_data[f"prod_label_{pidx + 1}"] = prod_label
-                day_data[f"work_hours_{pidx + 1}"] = work_hours
-                day_data[f"daily_output_{pidx + 1}"] = d
-                day_data[f"daily_delivery_{pidx + 1}"] = dd
-                day_data[f"closing_inventory_{pidx + 1}"] = inventories[pidx]
-                day_data[f"inventory_violation_{pidx + 1}"] = inv_violation
+                day_data["products"].append({
+                    "combo": c,
+                    "shift1": s1,
+                    "shift2": s2,
+                    "shift_label": shift_label,
+                    "prod1": prod1,
+                    "prod2": prod2,
+                    "prod_label": prod_label,
+                    "work_hours": work_hours,
+                    "daily_output": d,
+                    "daily_delivery": dd,
+                    "closing_inventory": inventories[pidx],
+                    "inventory_violation": inv_violation,
+                })
                 day_data["total_work_hours"] += work_hours
 
             line_working = any(c > 0 for c in day_combos)
@@ -392,6 +399,19 @@ class MultiProductScheduler:
 
             daily_results.append(day_data)
 
+        product_stats = []
+        for pidx in range(self.num_products):
+            product_stats.append({
+                "total_production_days": sum(1 for cv in all_combos[pidx] if cv > 0),
+                "min_inventory": int(min_inv[pidx]),
+                "final_inventory": int(inventories[pidx]),
+                "delivery_fulfilled": (
+                    total_produced[pidx] + self.products_data[pidx]["initial_inventory"]
+                    >= self.products_data[pidx]["total_delivery"]
+                ),
+                "holiday_production_days": holiday_prod[pidx],
+            })
+
         result = {
             "success": True,
             "message": f"排产计算完成（OR-Tools CP-SAT {self.num_products}物料求解器）",
@@ -399,17 +419,8 @@ class MultiProductScheduler:
             "total_production_days": production_days,
             "rest_days_occupied": rest_days_occupied,
             "num_products": self.num_products,
+            "product_stats": product_stats,
         }
-
-        for pidx in range(self.num_products):
-            result[f"total_production_days_{pidx + 1}"] = sum(1 for cv in all_combos[pidx] if cv > 0)
-            result[f"min_inventory_{pidx + 1}"] = int(min_inv[pidx])
-            result[f"final_inventory_{pidx + 1}"] = int(inventories[pidx])
-            result[f"delivery_fulfilled_{pidx + 1}"] = (
-                total_produced[pidx] + self.products_data[pidx]["initial_inventory"]
-                >= self.products_data[pidx]["total_delivery"]
-            )
-            result[f"holiday_production_days_{pidx + 1}"] = holiday_prod[pidx]
 
         return result
 
