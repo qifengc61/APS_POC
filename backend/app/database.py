@@ -26,6 +26,13 @@ def init_db():
             conn.commit()
     except Exception:
         pass
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE plan_materials ADD COLUMN safety_stock FLOAT DEFAULT NULL AFTER initial_inventory"))
+            conn.commit()
+    except Exception:
+        pass
     try:
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE products DROP COLUMN initial_inventory"))
@@ -89,5 +96,116 @@ def init_db():
                 except Exception:
                     pass
             conn.commit()
+    except Exception:
+        pass
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS plan_lines (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    plan_id INT NOT NULL,
+                    line_id INT NOT NULL,
+                    sort_order INT NOT NULL DEFAULT 0,
+                    FOREIGN KEY (plan_id) REFERENCES delivery_plans(id) ON DELETE CASCADE,
+                    FOREIGN KEY (line_id) REFERENCES production_lines(id) ON DELETE CASCADE
+                )
+            """))
+            conn.commit()
+    except Exception:
+        pass
+
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT COUNT(*) FROM plan_lines"))
+            count = result.scalar()
+            if count == 0:
+                try:
+                    conn.execute(text("""
+                        INSERT INTO plan_lines (plan_id, line_id, sort_order)
+                        SELECT id, line_id, 0
+                        FROM delivery_plans
+                        WHERE line_id IS NOT NULL
+                    """))
+                    conn.commit()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    try:
+        with engine.connect() as conn:
+            try:
+                conn.execute(text("ALTER TABLE plan_materials ADD COLUMN plan_line_id INT DEFAULT NULL AFTER id"))
+                conn.commit()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT COUNT(*) FROM plan_materials WHERE plan_line_id IS NULL"))
+            count = result.scalar()
+            if count > 0:
+                conn.execute(text("""
+                    UPDATE plan_materials pm
+                    JOIN plan_lines pl ON pm.plan_id = pl.plan_id
+                    SET pm.plan_line_id = pl.id
+                    WHERE pm.plan_line_id IS NULL
+                """))
+                conn.commit()
+    except Exception:
+        pass
+
+    try:
+        with engine.connect() as conn:
+            try:
+                conn.execute(text("ALTER TABLE plan_materials MODIFY plan_line_id INT NOT NULL"))
+                conn.commit()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    try:
+        with engine.connect() as conn:
+            try:
+                conn.execute(text("""
+                    ALTER TABLE plan_materials ADD CONSTRAINT fk_plan_line_id
+                    FOREIGN KEY (plan_line_id) REFERENCES plan_lines(id) ON DELETE CASCADE
+                """))
+                conn.commit()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    try:
+        with engine.connect() as conn:
+            try:
+                conn.execute(text("ALTER TABLE plan_materials DROP FOREIGN KEY plan_materials_ibfk_1"))
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE plan_materials DROP COLUMN plan_id"))
+            except Exception:
+                pass
+            conn.commit()
+    except Exception:
+        pass
+
+    try:
+        with engine.connect() as conn:
+            try:
+                for fk_name in ["delivery_plans_ibfk_1", "delivery_plans_line_id_fkey"]:
+                    try:
+                        conn.execute(text(f"ALTER TABLE delivery_plans DROP FOREIGN KEY {fk_name}"))
+                    except Exception:
+                        pass
+                conn.execute(text("ALTER TABLE delivery_plans DROP COLUMN line_id"))
+                conn.commit()
+            except Exception:
+                pass
     except Exception:
         pass

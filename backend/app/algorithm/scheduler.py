@@ -1,10 +1,21 @@
 import time
 import os
 from datetime import date, timedelta
+from functools import lru_cache
 from typing import List, Optional
 from ortools.sat.python import cp_model
 import chinese_calendar
 from ..models.schemas import ProductParams
+
+
+@lru_cache(maxsize=1024)
+def _cached_is_workday(d: date) -> bool:
+    return chinese_calendar.is_workday(d)
+
+
+@lru_cache(maxsize=1024)
+def _cached_is_holiday(d: date) -> bool:
+    return chinese_calendar.is_holiday(d)
 
 
 class MultiProductScheduler:
@@ -36,7 +47,6 @@ class MultiProductScheduler:
         holidays: List[date],
         max_time_seconds: int = 10,
         rest_day_weight: float = 50.0,
-        max_consecutive_work_days: int = 7,
         **kwargs,
     ):
         self.num_products = len(products)
@@ -56,7 +66,7 @@ class MultiProductScheduler:
         self.max_time_seconds = max_time_seconds
         self.scale = 2
         self.rest_day_weight = int(rest_day_weight * self.scale)
-        self.max_consecutive_work_days = max_consecutive_work_days
+        self.max_consecutive_work_days = 7
 
         self.days = (end_date - start_date).days + 1
         self.dates = [start_date + timedelta(days=i) for i in range(self.days)]
@@ -65,9 +75,9 @@ class MultiProductScheduler:
         self.calendar_holiday_flags = []
         self.calendar_adjusted_workday_flags = []
         for d in self.dates:
-            is_cal_rest = not chinese_calendar.is_workday(d)
-            is_cal_holiday = chinese_calendar.is_holiday(d)
-            is_adjusted = d.weekday() >= 5 and chinese_calendar.is_workday(d)
+            is_cal_rest = not _cached_is_workday(d)
+            is_cal_holiday = _cached_is_holiday(d)
+            is_adjusted = d.weekday() >= 5 and _cached_is_workday(d)
             self.calendar_rest_flags.append(is_cal_rest)
             self.calendar_holiday_flags.append(is_cal_holiday)
             self.calendar_adjusted_workday_flags.append(is_adjusted)
@@ -91,32 +101,44 @@ class MultiProductScheduler:
         self._validate_feasibility()
 
     def _validate_feasibility(self):
-        n = self.max_consecutive_work_days
-        max_work_days = self.days // (n + 1) * n + min(self.days % (n + 1), n)
-
         for pidx, pd in enumerate(self.products_data):
             label = f"物品{pidx + 1}"
             rated = pd["rated_output"]
             init = pd["initial_inventory"]
             saf = pd["safety_stock"]
             total = pd["total_delivery"]
-            max_possible = max_work_days * self.MAX_DAILY_SHIFTS * rated
+
+            max_possible = self.days * self.MAX_DAILY_SHIFTS * rated
             net_demand = total - init + saf
             if net_demand > 0 and max_possible < net_demand:
                 raise ValueError(
-                    f"{label}：即使在最大连续工作{n}天的约束下，产能极限仍无法满足净需求。"
-                    f"最大可排产天数{max_work_days}天（共{self.days}天），"
-                    f"最大产能{max_possible:.0f}，净需求{net_demand}"
+                    f"{label}：产能不足。共{self.days}天，最大产能{max_possible:.0f}，净需求{net_demand}"
                 )
 
-        total_max = max_work_days * self.MAX_DAILY_SHIFTS * sum(pd["rated_output"] for pd in self.products_data)
-        total_net = sum(
-            max(0, pd["total_delivery"] - pd["initial_inventory"] + pd["safety_stock"])
+            cum_del = 0
+            daily_list = self._daily_delivery_lists[pidx]
+            for k in range(self.days):
+                cum_del += daily_list[k]
+                day_idx = k + 1
+                cum_max_prod = day_idx * self.MAX_DAILY_SHIFTS * rated
+                cum_need = cum_del - init + saf
+                if cum_need > cum_max_prod:
+                    raise ValueError(
+                        f"{label}：在第{day_idx}天累积交货量{cum_del}超过该天前的产能极限。"
+                        f"前{day_idx}天最大产能{cum_max_prod:.0f}，累积净需求{cum_need:.0f}，"
+                        f"请调整交货分布或延长排产周期"
+                    )
+
+        total_required_shifts = sum(
+            max(0, pd["total_delivery"] - pd["initial_inventory"] + pd["safety_stock"]) / pd["rated_output"]
             for pd in self.products_data
         )
-        if total_net > total_max:
+        total_available = self.days * self.MAX_DAILY_SHIFTS
+        tolerance = 1.03
+        if total_required_shifts > total_available * tolerance:
             raise ValueError(
-                f"所有物品合计净需求{total_net}超过总产能极限{total_max:.0f}"
+                f"所有物料合计所需班次{total_required_shifts:.1f}超过总可用班次{total_available:.0f}"
+                f"（{self.days}天×{self.MAX_DAILY_SHIFTS}班/天），请延长排产周期或调整交货量"
             )
 
     def _compute_daily_deliveries(self, total_delivery: float, delivery_map: dict) -> list:
@@ -221,11 +243,8 @@ class MultiProductScheduler:
             total_final_excess += final_excess
 
         n = self.max_consecutive_work_days
-        for i in range(self.days - n):
-            model.Add(sum(is_work_day[i:i + n + 1]) <= n)
-
         consecutive_window_vars = []
-        window_len = n - 1
+        window_len = n
         if window_len >= 2:
             for i in range(self.days - window_len + 1):
                 window = is_work_day[i:i + window_len]
@@ -290,8 +309,36 @@ class MultiProductScheduler:
             smooth_vars.append(abs_diff)
         return sum(smooth_vars)
 
+    def _build_hint(self, model, all_combo_vars):
+        for pidx in range(self.num_products):
+            pd = self.products_data[pidx]
+            net_demand = max(0, pd["total_delivery"] - pd["initial_inventory"] + pd["safety_stock"])
+            rated = pd["rated_output"]
+            available_indices = [i for i in range(self.days) if not self.rest_flags[i]]
+            if not available_indices or net_demand <= 0:
+                for i in range(self.days):
+                    model.AddHint(all_combo_vars[pidx][i], 0)
+                continue
+            avg_per_day = net_demand / len(available_indices)
+            combo_prods = {
+                c: (s1 + s2) * rated for c, (s1, s2) in self.COMBOS.items()
+            }
+            for i in range(self.days):
+                if self.rest_flags[i]:
+                    model.AddHint(all_combo_vars[pidx][i], 0)
+                else:
+                    best = 0
+                    best_diff = float("inf")
+                    for c, prod in combo_prods.items():
+                        diff = abs(prod - avg_per_day)
+                        if diff < best_diff:
+                            best_diff = diff
+                            best = c
+                    model.AddHint(all_combo_vars[pidx][i], best)
+
     def run(self) -> dict:
         model, all_combo_vars, primary_obj = self._build_model()
+        self._build_hint(model, all_combo_vars)
 
         model.Minimize(primary_obj)
 

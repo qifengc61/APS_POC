@@ -45,25 +45,37 @@ class DeliveryPlan(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(200), nullable=False)
-    line_id = Column(Integer, ForeignKey("production_lines.id", ondelete="CASCADE"), nullable=False)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
 
+    lines = relationship("PlanLine", back_populates="plan", cascade="all, delete-orphan", order_by="PlanLine.sort_order")
+
+
+class PlanLine(Base):
+    __tablename__ = "plan_lines"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    plan_id = Column(Integer, ForeignKey("delivery_plans.id", ondelete="CASCADE"), nullable=False)
+    line_id = Column(Integer, ForeignKey("production_lines.id", ondelete="CASCADE"), nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    plan = relationship("DeliveryPlan", back_populates="lines")
     line = relationship("ProductionLine")
-    materials = relationship("PlanMaterial", back_populates="plan", cascade="all, delete-orphan", order_by="PlanMaterial.sort_order")
+    materials = relationship("PlanMaterial", back_populates="plan_line", cascade="all, delete-orphan", order_by="PlanMaterial.sort_order")
 
 
 class PlanMaterial(Base):
     __tablename__ = "plan_materials"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    plan_id = Column(Integer, ForeignKey("delivery_plans.id", ondelete="CASCADE"), nullable=False)
+    plan_line_id = Column(Integer, ForeignKey("plan_lines.id", ondelete="CASCADE"), nullable=False)
     line_product_id = Column(Integer, ForeignKey("line_products.id", ondelete="CASCADE"), nullable=False)
     initial_inventory = Column(Float, nullable=False, default=0)
+    safety_stock = Column(Float, nullable=True, default=None)
     total_delivery = Column(Float, nullable=False, default=0)
     daily_deliveries = Column(Text, nullable=True, default=None)
     sort_order = Column(Integer, nullable=False, default=0)
 
-    plan = relationship("DeliveryPlan", back_populates="materials")
+    plan_line = relationship("PlanLine", back_populates="materials")
     line_product = relationship("LineProduct")

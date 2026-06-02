@@ -51,6 +51,19 @@ class ScheduleByPlanRequest(BaseModel):
     config: AlgorithmConfig = AlgorithmConfig()
 
 
+def _parse_dd(dd_str, start_date, end_date):
+    if not dd_str:
+        return None
+    try:
+        vals = json.loads(dd_str)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    days = (end_date - start_date).days + 1
+    if len(vals) != days:
+        return None
+    return [{"date": (start_date + timedelta(days=i)).isoformat(), "quantity": vals[i]} for i in range(days)]
+
+
 @router.post("/schedule/by-plan")
 async def calculate_schedule_by_plan(request: ScheduleByPlanRequest, db: Session = Depends(get_db)):
     try:
@@ -58,37 +71,47 @@ async def calculate_schedule_by_plan(request: ScheduleByPlanRequest, db: Session
         if not plan:
             raise HTTPException(status_code=404, detail="交货计划不存在")
 
-        def _parse_dd(dd_str, start_date, end_date):
-            if not dd_str:
-                return None
-            try:
-                vals = json.loads(dd_str)
-            except (json.JSONDecodeError, TypeError):
-                return None
-            days = (end_date - start_date).days + 1
-            if len(vals) != days:
-                return None
-            return [{"date": (start_date + timedelta(days=i)).isoformat(), "quantity": vals[i]} for i in range(days)]
+        line_results = []
+        for plan_line in plan.lines:
+            product_params_list = []
+            for pm in plan_line.materials:
+                lp = pm.line_product
+                saf = pm.safety_stock if pm.safety_stock is not None else lp.safety_stock
+                pp = ProductParams(
+                    initial_inventory=pm.initial_inventory,
+                    safety_stock=saf,
+                    rated_output=lp.rated_output,
+                    total_delivery=pm.total_delivery,
+                    daily_deliveries=_parse_dd(pm.daily_deliveries, plan.start_date, plan.end_date),
+                )
+                product_params_list.append(pp)
 
-        product_params_list = []
-        for pm in plan.materials:
-            lp = pm.line_product
-            pp = ProductParams(
-                initial_inventory=pm.initial_inventory,
-                safety_stock=lp.safety_stock,
-                rated_output=lp.rated_output,
-                total_delivery=pm.total_delivery,
-                daily_deliveries=_parse_dd(pm.daily_deliveries, plan.start_date, plan.end_date),
+            params = SchedulingParams(
+                products=product_params_list,
+                start_date=plan.start_date,
+                end_date=plan.end_date,
             )
-            product_params_list.append(pp)
+            line_result = SchedulingService.calculate(params, request.config, [])
+            line_result["line_id"] = plan_line.line_id
+            line_result["line_name"] = plan_line.line.name
+            line_results.append(line_result)
 
-        params = SchedulingParams(
-            products=product_params_list,
-            start_date=plan.start_date,
-            end_date=plan.end_date,
-        )
-        result = SchedulingService.calculate(params, request.config, [])
-        return result
+        overall_success = all(r["success"] for r in line_results)
+
+        if not line_results:
+            return {
+                "success": False,
+                "message": "交货计划无产线分配",
+                "num_lines": 0,
+                "line_results": [],
+            }
+
+        return {
+            "success": overall_success,
+            "message": "排产计算完成" + ("（所有产线）" if overall_success else "（部分产线失败）"),
+            "num_lines": len(line_results),
+            "line_results": line_results,
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=_format_error(e))
     except HTTPException:

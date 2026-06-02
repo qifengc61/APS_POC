@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { listLines, listDeliveryPlans, createDeliveryPlan, deleteDeliveryPlan } from '../api/api'
+import { listProducts, listDeliveryPlans, createDeliveryPlan, deleteDeliveryPlan } from '../api/api'
 import dayjs from 'dayjs'
 
 const inputStyle = {
@@ -13,36 +13,29 @@ const btnGhost = { padding: '6px 12px', backgroundColor: '#f3f4f6', color: '#374
 
 const MATERIAL_COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2']
 const MATERIAL_BG_COLORS = ['#eff6ff', '#ecfdf5', '#fffbeb', '#fef2f2', '#f5f3ff', '#ecfeff']
+const LINE_COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2']
 
 export default function DeliveryPlanPage() {
   const [plans, setPlans] = useState([])
-  const [lines, setLines] = useState([])
+  const [products, setProducts] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
     name: '',
-    line_id: '',
     materials: [],
     start_date: dayjs().format('YYYY-MM-DD'),
     end_date: dayjs().add(29, 'day').format('YYYY-MM-DD'),
   })
-  const [selectedLine, setSelectedLine] = useState(null)
 
   const load = async () => {
-    const [planData, lineData] = await Promise.all([listDeliveryPlans(), listLines()])
+    const [planData, productData] = await Promise.all([listDeliveryPlans(), listProducts()])
     setPlans(planData)
-    setLines(lineData)
+    setProducts(productData)
   }
 
   useEffect(() => { load() }, [])
 
-  const handleLineChange = (lineId) => {
-    const line = lines.find(l => l.id === parseInt(lineId))
-    setSelectedLine(line || null)
-    setForm(prev => ({ ...prev, line_id: lineId ? parseInt(lineId) : '', materials: [] }))
-  }
-
   const addMaterial = () => {
-    setForm(prev => ({ ...prev, materials: [...prev.materials, { line_product_id: '', initial_inventory: 0, daily_deliveries_str: '', computed_total: 0 }] }))
+    setForm(prev => ({ ...prev, materials: [...prev.materials, { product_id: '', initial_inventory: 0, daily_deliveries_str: '', computed_total: 0 }] }))
   }
 
   const removeMaterial = (idx) => {
@@ -84,8 +77,8 @@ export default function DeliveryPlanPage() {
   }
 
   const handleSubmit = async () => {
-    if (!form.name.trim() || !form.line_id) {
-      alert('请填写计划名称并选择产线')
+    if (!form.name.trim()) {
+      alert('请填写计划名称')
       return
     }
     if (form.materials.length < 1) {
@@ -95,7 +88,7 @@ export default function DeliveryPlanPage() {
     const daysCount = getDaysCount()
     for (let i = 0; i < form.materials.length; i++) {
       const m = form.materials[i]
-      if (!m.line_product_id) {
+      if (!m.product_id) {
         alert(`请选择第${i + 1}个物料`)
         return
       }
@@ -109,7 +102,7 @@ export default function DeliveryPlanPage() {
         return
       }
     }
-    const ids = form.materials.map(m => m.line_product_id)
+    const ids = form.materials.map(m => m.product_id)
     if (new Set(ids).size !== ids.length) {
       alert('物料不能重复')
       return
@@ -117,9 +110,8 @@ export default function DeliveryPlanPage() {
     try {
       await createDeliveryPlan({
         name: form.name,
-        line_id: form.line_id,
         materials: form.materials.map(m => ({
-          line_product_id: m.line_product_id,
+          product_id: m.product_id,
           initial_inventory: m.initial_inventory || 0,
           daily_deliveries: m.daily_deliveries_str.trim(),
           total_delivery: m.computed_total,
@@ -128,11 +120,10 @@ export default function DeliveryPlanPage() {
         end_date: form.end_date,
       })
       setForm({
-        name: '', line_id: '', materials: [],
+        name: '', materials: [],
         start_date: dayjs().format('YYYY-MM-DD'),
         end_date: dayjs().add(29, 'day').format('YYYY-MM-DD'),
       })
-      setSelectedLine(null)
       setShowForm(false)
       load()
     } catch (err) {
@@ -147,7 +138,6 @@ export default function DeliveryPlanPage() {
     load()
   }
 
-  const lineProducts = selectedLine ? selectedLine.products : []
   const daysCount = getDaysCount()
 
   return (
@@ -167,93 +157,85 @@ export default function DeliveryPlanPage() {
               <input style={inputStyle} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="输入交货计划名称" />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-              <div>
-                <label style={labelStyle}>选择产线</label>
-                <select style={inputStyle} value={form.line_id} onChange={e => handleLineChange(e.target.value)}>
-                  <option value="">请选择产线</option>
-                  {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
+            <div style={{ marginBottom: '12px' }}>
+              <label style={labelStyle}>排产日期范围</label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input type="date" style={inputStyle} value={form.start_date} onChange={e => setForm({ ...form, start_date: e.target.value })} />
+                <span style={{ color: '#9ca3af' }}>~</span>
+                <input type="date" style={inputStyle} value={form.end_date} onChange={e => setForm({ ...form, end_date: e.target.value })} />
               </div>
-              <div>
-                <label style={labelStyle}>排产日期范围</label>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input type="date" style={inputStyle} value={form.start_date} onChange={e => setForm({ ...form, start_date: e.target.value })} />
-                  <span style={{ color: '#9ca3af' }}>~</span>
-                  <input type="date" style={inputStyle} value={form.end_date} onChange={e => setForm({ ...form, end_date: e.target.value })} />
-                </div>
-                {form.start_date && form.end_date && (
-                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>共 {daysCount} 天</div>
-                )}
-              </div>
+              {form.start_date && form.end_date && (
+                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>共 {daysCount} 天</div>
+              )}
             </div>
 
-            {selectedLine && (
-              <>
-                <div style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ ...labelStyle, marginBottom: 0 }}>交货物料（1~6个）</label>
-                  <button onClick={addMaterial} style={{ ...btnGhost, fontSize: '12px' }} disabled={form.materials.length >= 6}>
-                    + 添加物料 {form.materials.length >= 6 ? '(已达上限)' : `(${form.materials.length}/6)`}
-                  </button>
-                </div>
-                {form.materials.map((fm, idx) => {
-                  const lp = lineProducts.find(x => x.id === parseInt(fm.line_product_id))
-                  const color = MATERIAL_COLORS[idx % MATERIAL_COLORS.length]
-                  const bgColor = MATERIAL_BG_COLORS[idx % MATERIAL_BG_COLORS.length]
-                  return (
-                    <div key={idx} style={{ marginBottom: '12px', padding: '12px', backgroundColor: '#fff', borderRadius: '8px', border: `1px solid ${color}33`, borderLeft: `3px solid ${color}` }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr auto', gap: '8px', marginBottom: '8px', alignItems: 'end' }}>
-                        <div>
-                          <label style={{ ...labelStyle, fontSize: '11px', color }}>物料 {idx + 1}</label>
-                          <select style={inputStyle} value={fm.line_product_id} onChange={e => setForm(prev => { const m = [...prev.materials]; m[idx] = { line_product_id: parseInt(e.target.value), initial_inventory: 0, daily_deliveries_str: '', computed_total: 0, daily_error: null }; return { ...prev, materials: m } })}>
-                            <option value="">选择物料</option>
-                            {lineProducts.map(lp => <option key={lp.id} value={lp.id}>{lp.product_name}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ ...labelStyle, fontSize: '11px' }}>初期库存</label>
-                          <input type="number" style={inputStyle} value={fm.initial_inventory || 0} onChange={e => setForm(prev => { const m = [...prev.materials]; m[idx] = { ...m[idx], initial_inventory: parseFloat(e.target.value) || 0 }; return { ...prev, materials: m } })} />
-                        </div>
-                        <button onClick={() => removeMaterial(idx)} style={{ ...btnDanger, height: '36px' }}>✕</button>
-                      </div>
-                      <div style={{ marginBottom: '4px' }}>
-                        <label style={{ ...labelStyle, fontSize: '11px' }}>每日交货量（空格分隔，共 {daysCount} 个值）</label>
-                        <textarea
-                          style={{ ...inputStyle, minHeight: '60px', resize: 'vertical', fontFamily: 'monospace', fontSize: '12px' }}
-                          value={fm.daily_deliveries_str}
-                          onChange={e => updateMaterialDaily(idx, e.target.value)}
-                          placeholder="例如：125 55 220 179 181 16 268 240 ..."
-                        />
-                      </div>
-                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', fontSize: '12px' }}>
-                        {fm.daily_error ? (
-                          <span style={{ color: '#dc2626' }}>⚠ {fm.daily_error}</span>
-                        ) : fm.daily_deliveries_str.trim() ? (
-                          <>
-                            <span style={{ color: '#374151', fontWeight: '600' }}>总交货量：{fm.computed_total}</span>
-                            <span style={{ color: '#6b7280' }}>已输入 {fm.daily_deliveries_str.trim().split(/\s+/).length} / {daysCount} 天</span>
-                          </>
-                        ) : null}
-                      </div>
-                      {lp && fm.line_product_id && (
-                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '6px' }}>
-                          安全库存{lp.safety_stock} / 8H班产量{lp.rated_output}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-                {lineProducts.length < 1 && (
-                  <div style={{ padding: '12px', backgroundColor: '#fef3c7', borderRadius: '8px', color: '#92400e', fontSize: '13px', marginBottom: '12px' }}>
-                    ⚠️ 该产线关联的物料不足，请先在产线管理中为产线添加物料
-                  </div>
-                )}
-              </>
+            <div style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label style={{ ...labelStyle, marginBottom: 0 }}>交货物料</label>
+              <button onClick={addMaterial} style={{ ...btnGhost, fontSize: '12px' }}>
+                + 添加物料
+              </button>
+            </div>
+
+            {products.length === 0 && (
+              <div style={{ padding: '12px', backgroundColor: '#fef3c7', borderRadius: '8px', color: '#92400e', fontSize: '13px', marginBottom: '12px' }}>
+                ⚠️ 系统中暂无物料，请先在物料管理中添加物料，再为产线配置可生产物料
+              </div>
             )}
+
+            {form.materials.map((fm, idx) => {
+              const p = products.find(x => x.id === parseInt(fm.product_id))
+              const color = MATERIAL_COLORS[idx % MATERIAL_COLORS.length]
+              return (
+                <div key={idx} style={{ marginBottom: '12px', padding: '12px', backgroundColor: '#fff', borderRadius: '8px', border: `1px solid ${color}33`, borderLeft: `3px solid ${color}` }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr auto', gap: '8px', marginBottom: '8px', alignItems: 'end' }}>
+                    <div>
+                      <label style={{ ...labelStyle, fontSize: '11px', color }}>物料 {idx + 1}</label>
+                      <select style={inputStyle} value={fm.product_id} onChange={e => setForm(prev => { const m = [...prev.materials]; m[idx] = { product_id: parseInt(e.target.value), initial_inventory: 0, daily_deliveries_str: '', computed_total: 0, daily_error: null }; return { ...prev, materials: m } })}>
+                        <option value="">选择物料</option>
+                        {products.map(p => <option key={p.id} value={p.id}>{p.name}{p.code ? ` (${p.code})` : ''}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ ...labelStyle, fontSize: '11px' }}>初期库存</label>
+                      <input type="number" style={inputStyle} value={fm.initial_inventory || ''} onChange={e => setForm(prev => { const m = [...prev.materials]; m[idx] = { ...m[idx], initial_inventory: parseFloat(e.target.value) || 0 }; return { ...prev, materials: m } })} placeholder="0" />
+                    </div>
+                    <button onClick={() => removeMaterial(idx)} style={{ ...btnDanger, height: '36px' }}>✕</button>
+                  </div>
+                  <div style={{ marginBottom: '4px' }}>
+                    <label style={{ ...labelStyle, fontSize: '11px' }}>每日交货量（空格分隔，共 {daysCount} 个值）</label>
+                    <textarea
+                      style={{ ...inputStyle, minHeight: '60px', resize: 'vertical', fontFamily: 'monospace', fontSize: '12px' }}
+                      value={fm.daily_deliveries_str}
+                      onChange={e => updateMaterialDaily(idx, e.target.value)}
+                      placeholder="例如：125 55 220 179 181 16 268 240 ..."
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center', fontSize: '12px' }}>
+                    {fm.daily_error ? (
+                      <span style={{ color: '#dc2626' }}>⚠ {fm.daily_error}</span>
+                    ) : fm.daily_deliveries_str.trim() ? (
+                      <>
+                        <span style={{ color: '#374151', fontWeight: '600' }}>总交货量：{fm.computed_total}</span>
+                        <span style={{ color: '#6b7280' }}>已输入 {fm.daily_deliveries_str.trim().split(/\s+/).length} / {daysCount} 天</span>
+                      </>
+                    ) : null}
+                  </div>
+                  {p && fm.product_id && (
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '6px' }}>
+                      安全库存{p.safety_stock}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px', marginBottom: '8px' }}>
+              * 系统将自动匹配可生产所有选定物料的产线，若单条产线无法满足，将自动拆分至多条产线
+            </div>
 
             <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
               <button onClick={handleSubmit} style={btnPrimary}>确认创建</button>
-              <button onClick={() => { setShowForm(false); setSelectedLine(null) }} style={btnGhost}>取消</button>
+              <button onClick={() => { setShowForm(false) }} style={btnGhost}>取消</button>
             </div>
           </div>
         )}
@@ -262,32 +244,37 @@ export default function DeliveryPlanPage() {
           <thead>
             <tr style={{ backgroundColor: '#f8fafc' }}>
               <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: '#475569' }}>计划名称</th>
-              <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: '600', color: '#475569' }}>产线</th>
-              <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: '#475569' }}>交货物料</th>
+              <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: '#475569' }}>产线分配</th>
               <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: '600', color: '#475569' }}>排产日期</th>
               <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: '600', color: '#475569' }}>操作</th>
             </tr>
           </thead>
           <tbody>
             {plans.length === 0 && (
-              <tr><td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>暂无交货计划，请先创建</td></tr>
+              <tr><td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>暂无交货计划，请先创建</td></tr>
             )}
             {plans.map(p => (
               <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <td style={{ padding: '10px 16px', fontWeight: '500' }}>{p.name}</td>
-                <td style={{ padding: '10px 16px', textAlign: 'center' }}>{p.line_name}</td>
                 <td style={{ padding: '10px 16px' }}>
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    {p.materials.map((m, idx) => (
-                      <span key={idx} style={{
-                        padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500',
-                        backgroundColor: MATERIAL_BG_COLORS[idx % MATERIAL_BG_COLORS.length],
-                        color: MATERIAL_COLORS[idx % MATERIAL_COLORS.length],
-                      }}>
-                        {m.product_name}(总交货量{m.total_delivery})
-                      </span>
-                    ))}
-                  </div>
+                  {(p.lines || []).map((line, lIdx) => (
+                    <div key={lIdx} style={{ marginBottom: lIdx < (p.lines || []).length - 1 ? '8px' : 0 }}>
+                      <div style={{ fontSize: '12px', fontWeight: '600', color: LINE_COLORS[lIdx % LINE_COLORS.length], marginBottom: '4px' }}>
+                        🏭 {line.line_name}
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', paddingLeft: '8px' }}>
+                        {(line.materials || []).map((m, idx) => (
+                          <span key={idx} style={{
+                            padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '500',
+                            backgroundColor: MATERIAL_BG_COLORS[idx % MATERIAL_BG_COLORS.length],
+                            color: MATERIAL_COLORS[idx % MATERIAL_COLORS.length],
+                          }}>
+                            {m.product_name}(交货{m.total_delivery})
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </td>
                 <td style={{ padding: '10px 16px', textAlign: 'center', fontSize: '12px' }}>{p.start_date} ~ {p.end_date}</td>
                 <td style={{ padding: '10px 16px', textAlign: 'center' }}>

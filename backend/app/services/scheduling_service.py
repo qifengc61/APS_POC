@@ -37,16 +37,37 @@ class SchedulingService:
     @staticmethod
     def calculate(params: SchedulingParams, config: AlgorithmConfig, holidays: list = None) -> dict:
         holiday_list = holidays or []
-        scheduler = MultiProductScheduler(
-            products=params.products,
-            start_date=params.start_date,
-            end_date=params.end_date,
-            holidays=holiday_list,
-            max_time_seconds=config.max_time_seconds,
-            rest_day_weight=config.rest_day_weight,
-            max_consecutive_work_days=config.max_consecutive_work_days,
-        )
-        return scheduler.run()
+        try:
+            scheduler = MultiProductScheduler(
+                products=params.products,
+                start_date=params.start_date,
+                end_date=params.end_date,
+                holidays=holiday_list,
+                max_time_seconds=config.max_time_seconds,
+                rest_day_weight=config.rest_day_weight,
+            )
+            return scheduler.run()
+        except ValueError as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "daily_results": [],
+                "total_production_days": 0,
+                "rest_days_occupied": 0,
+                "num_products": len(params.products),
+                "product_stats": [
+                    {
+                        "total_production_days": 0,
+                        "min_inventory": 0,
+                        "final_inventory": 0,
+                        "delivery_fulfilled": False,
+                        "holiday_production_days": 0,
+                    }
+                    for _ in params.products
+                ],
+                "solver_status": "",
+                "solve_time": 0,
+            }
 
     @staticmethod
     def export_excel(result: dict, plan_info: list = None) -> BytesIO:

@@ -1,6 +1,6 @@
 const MATERIAL_COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2']
 
-export default function ResultTable({ result, onExport, activeProductIdx = 0 }) {
+export default function ResultTable({ result, onExport, activeProductIdx = 0, lineName = '' }) {
   if (!result || !result.daily_results || result.daily_results.length === 0) return null
 
   const color = MATERIAL_COLORS[activeProductIdx % MATERIAL_COLORS.length]
@@ -35,10 +35,12 @@ export default function ResultTable({ result, onExport, activeProductIdx = 0 }) 
     return p[col.key]
   }
 
+  const headerLabel = lineName ? `📋 ${lineName} - 排产结果明细` : '📋 排产结果明细'
+
   return (
     <div style={{ backgroundColor: '#fff', borderRadius: '10px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
       <div style={{ padding: '16px 20px 12px', borderBottom: `2px solid ${color}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ margin: 0, fontSize: '16px', color: '#1f2937' }}>📋 排产结果明细</h3>
+        <h3 style={{ margin: 0, fontSize: '16px', color: '#1f2937' }}>{headerLabel}</h3>
         {onExport && (
           <button onClick={onExport} style={{
             padding: '6px 14px', backgroundColor: '#059669', color: '#fff',

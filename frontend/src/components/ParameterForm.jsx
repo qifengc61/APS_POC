@@ -24,7 +24,7 @@ const defaultParams = {
 const defaultConfig = {
   avoid_rest_work_weight: 50,
   max_consecutive_work_days: 7,
-  max_time_seconds: 10,
+  max_time_seconds: 30,
 }
 
 function ProductFields({ label, color, params, onChange }) {

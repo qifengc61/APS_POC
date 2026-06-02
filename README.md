@@ -1,6 +1,6 @@
-# 智能排产系统 V2.1
+# 智能排产系统 V2.2
 
-基于 **Google OR-Tools CP-SAT** 约束优化的智能生产排产系统，支持 **1~6 物料共享单条产线**，采用 Python FastAPI + React 前后端分离架构，数据持久化使用 MySQL。
+基于 **Google OR-Tools CP-SAT** 约束优化的智能生产排产系统，支持 **多物料共享单条产线** 和 **交货计划自动拆分到多条产线**，采用 Python FastAPI + React 前后端分离架构，数据持久化使用 MySQL。
 
 ## 项目结构
 
@@ -12,15 +12,15 @@
 │       ├── __init__.py               # FastAPI 应用初始化、CORS、路由注册、数据库自动建表+迁移
 │       ├── database.py               # SQLAlchemy 连接配置（MySQL，连接池）
 │       ├── algorithm/
-│       │   └── scheduler.py          # OR-Tools CP-SAT 排产算法核心（1~6物料）
+│       │   └── scheduler.py          # OR-Tools CP-SAT 排产算法核心（多物料）
 │   ├── api/
 │   │   ├── __init__.py           # API 路由注册（导出 scheduling router）
 │   │   ├── scheduling.py         # 排产计算/校验/导出 API
 │   │   ├── production_lines.py   # 产线 & 物料 CRUD API
-│   │   └── delivery_plans.py     # 交货计划 CRUD API
+│   │   └── delivery_plans.py     # 交货计划 CRUD API + 自动多产线拆分算法
 │       ├── models/
 │       │   ├── schemas.py            # Pydantic 数据模型（排产请求/响应）
-│       │   └── db_models.py          # SQLAlchemy ORM 模型（4 张表）
+│       │   └── db_models.py          # SQLAlchemy ORM 模型（5 张表）
 │   └── services/
 │       ├── __init__.py              # 服务层模块导出
 │       └── scheduling_service.py # 排产业务逻辑 + Excel 导出
@@ -35,14 +35,13 @@
 │       ├── App.css
 │       ├── api/api.js                # Axios 请求封装（14 个 API 函数）
 │       ├── components/
-│       │   ├── ParameterForm.jsx     # [V1遗留] 参数表单组件（当前未使用）
-│       │   ├── ResultTable.jsx       # 排产结果明细表格（含导出按钮）
-│       │   └── ResultCharts.jsx      # 趋势图表 + 统计卡片
+│       │   ├── ResultTable.jsx       # 排产结果明细表格（含导出按钮，按产线+物料展示）
+│       │   └── ResultCharts.jsx      # 趋势图表 + 统计卡片（按产线+物料展示）
 │       └── pages/
 │           ├── MaterialManagement.jsx # 物料管理页面
 │           ├── LineManagement.jsx     # 产线管理页面
-│           ├── DeliveryPlan.jsx       # 交货计划页面
-│           └── Scheduling.jsx         # 排产计算页面
+│           ├── DeliveryPlan.jsx       # 交货计划页面（展示多产线分配信息）
+│           └── Scheduling.jsx         # 排产计算页面（按产线切换查看结果）
 ├── README.md
 └── 导出模板.xlsx                      # Excel 导出模板
 ```
@@ -111,21 +110,33 @@ conda run -n smart-scheduling --cwd frontend npm install
 
 | 页面 | 路由 | 功能 |
 |------|------|------|
-| 🚀 排产计算 | `/` | 选择交货计划 + 配置算法参数 → 一键排产，查看结果表格/图表，导出 Excel |
+| 🚀 排产计算 | `/` | 选择交货计划 + 配置算法参数 → 一键排产，多产线切换查看结果表格/图表，导出 Excel |
 | 📦 物料管理 | `/materials` | 管理物料基础信息（名称、编码、安全库存） |
 | 🏭 产线管理 | `/lines` | 管理产线，为产线添加可生产物料及 8H 班产量 |
-| 📋 交货计划 | `/delivery-plans` | 创建交货计划，选择产线 + 物料，输入每日交货量 |
+| 📋 交货计划 | `/delivery-plans` | 创建交货计划，输入日期范围 + 物料 + 每日交货量，系统自动匹配产线并自动拆分到多条产线 |
 
 ### 使用流程
 
 1. **物料管理**：添加物料（名称、编码、安全库存）
 2. **产线管理**：创建产线，添加可生产物料并设定 8H 班产量
-3. **交货计划**：选择产线，为每个物料输入每日交货量（空格分隔，自动校验天数匹配，自动计算总交货量）
-4. **排产计算**：选择交货计划，调整算法配置，点击"开始排产"，查看结果并导出
+3. **交货计划**：选择物料并输入每日交货量（空格分隔，自动校验天数匹配，自动计算总交货量），系统自动进行多产线拆分
+4. **排产计算**：选择交货计划，调整算法配置，点击"开始排产"→ 多产线自动并行排产，按产线切换查看结果并导出
+
+## 自动多产线拆分算法
+
+当创建交货计划时，系统自动执行以下分配逻辑（[delivery_plans.py](file:///d:/Desktop/智能排产/智能排产POC/backend/app/api/delivery_plans.py#L163-L292)）：
+
+### 算法流程
+
+1. **单产线优先**：检查是否存在可生产所有选定物料且产能足够的单条产线，如有则直接使用（保持原有行为）
+2. **贪心集合覆盖选线**：若单条产线无法满足，贪心选择最少产线数覆盖所有物料（每步选覆盖最多未覆盖物料的产线）
+3. **物料分配**：每个物料分配给**剩余容量最大**的产线（同剩余容量时选额定产量更高的产线，过载产线天然被绕开）
+4. **产能校验与拆分**：检查每条产线总产能是否超载，对超载产线的物料按额定产量比例拆分到其他产线。拆分时**初期库存、安全库存均按比例分配**，且拆分比受目标产线的**单物料最大产能约束**，防止超出目标产线极限
+5. **每日交货量拆分**：按剩余/拆分比例逐日拆分每日交货量，保证每日整数且总量守恒
 
 ## 数据库设计
 
-使用 MySQL 持久化存储，SQLAlchemy ORM 自动建表。应用启动时自动执行增量迁移（新增字段、拆分表等），无需手动执行 SQL。主要迁移包括：为 `products` 表新增 `code` 列、删除 `initial_inventory` 列；将 `delivery_plans` 中的双物料字段拆分为独立的 `plan_materials` 子表。
+使用 MySQL 持久化存储，SQLAlchemy ORM 自动建表。应用启动时自动执行增量迁移（新增字段、拆分表等），无需手动执行 SQL。
 
 ### 表结构
 
@@ -164,19 +175,28 @@ conda run -n smart-scheduling --cwd frontend npm install
 |------|------|------|------|
 | id | Integer | PK, 自增 | 主键 |
 | name | String(200) | NOT NULL | 计划名称 |
-| line_id | Integer | FK → production_lines, CASCADE | 所属产线 |
 | start_date | Date | NOT NULL | 排产开始日期 |
 | end_date | Date | NOT NULL | 排产结束日期 |
 | created_at | DateTime | default=now | 创建时间 |
+
+#### `plan_lines` — 交货计划-产线关联（V2.2 新增）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | Integer | PK, 自增 | 主键 |
+| plan_id | Integer | FK → delivery_plans, CASCADE | 所属交货计划 |
+| line_id | Integer | FK → production_lines, CASCADE | 关联产线 |
+| sort_order | Integer | NOT NULL, default=0 | 排序顺序 |
 
 #### `plan_materials` — 交货计划物料明细
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | Integer | PK, 自增 | 主键 |
-| plan_id | Integer | FK → delivery_plans, CASCADE | 所属交货计划 |
+| plan_line_id | Integer | FK → plan_lines, CASCADE | 所属产线分配（V2.2 改为关联 plan_lines） |
 | line_product_id | Integer | FK → line_products, CASCADE | 关联的产线物料 |
 | initial_inventory | Float | NOT NULL, default=0 | 初期库存 |
+| safety_stock | Float | nullable | 安全库存（过载拆分时按比例分配，为空时回退到 line_product.safety_stock） |
 | total_delivery | Float | NOT NULL, default=0 | 总交货量 |
 | daily_deliveries | Text | nullable | 每日交货量（JSON 数组字符串，如 `[125,55,220]`） |
 | sort_order | Integer | NOT NULL, default=0 | 排序顺序 |
@@ -185,8 +205,10 @@ conda run -n smart-scheduling --cwd frontend npm install
 
 ```
 products ──1:N──> line_products ──N:1──> production_lines
-                                        │
-delivery_plans ──1:N──> plan_materials ──N:1──> line_products
+                                                 │
+                                    delivery_plans ──1:N──> plan_lines ──N:1──> production_lines
+                                                              │
+                                                              └──1:N──> plan_materials ──N:1──> line_products
 ```
 
 ## API 接口
@@ -228,16 +250,15 @@ delivery_plans ──1:N──> plan_materials ──N:1──> line_products
 ```json
 {
   "name": "5月排产计划",
-  "line_id": 1,
   "materials": [
     {
-      "line_product_id": 1,
+      "product_id": 1,
       "initial_inventory": 500,
       "daily_deliveries": "125 55 220 179 181 16 268 240 237 103 240 140 99 0 171 163 100 57 108 132 0 0 0 130 92 151 100 100 77 72 90",
       "total_delivery": 0
     },
     {
-      "line_product_id": 2,
+      "product_id": 2,
       "initial_inventory": 300,
       "daily_deliveries": "50 60 70 80 90 100 110 120 130 140 50 60 70 80 90 100 110 120 130 140 50 60 70 80 90 100 110 120 130 140 50",
       "total_delivery": 0
@@ -248,14 +269,14 @@ delivery_plans ──1:N──> plan_materials ──N:1──> line_products
 }
 ```
 
-> `daily_deliveries` 为空格分隔的每日交货量，数量必须与排产天数匹配，`total_delivery` 传入 0 时由后端自动求和计算。交货计划支持 **1~6 个物料**，且物料不能重复、必须属于指定产线。每个物料可单独指定 `initial_inventory`（初期库存）。
+> `daily_deliveries` 为空格分隔的每日交货量，数量必须与排产天数匹配，`total_delivery` 传入 0 时由后端自动求和计算。交货计划支持 **至少 1 个物料**，无上限限制，且物料不能重复。系统自动匹配产线并自动拆分到多条产线。每个物料可单独指定 `initial_inventory`（初期库存）。
 
 ### 排产计算
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/schedule` | 直接传入参数执行排产计算 |
-| POST | `/api/schedule/by-plan` | 通过交货计划 ID 执行排产计算 |
+| POST | `/api/schedule/by-plan` | 通过交货计划 ID 执行排产计算（返回多产线结果） |
 | POST | `/api/validate` | 参数可行性校验（仅校验产能是否足够，不执行求解） |
 | POST | `/api/schedule/export` | 导出排产结果为 Excel 文件 |
 
@@ -266,13 +287,48 @@ delivery_plans ──1:N──> plan_materials ──N:1──> line_products
   "delivery_plan_id": 1,
   "config": {
     "rest_day_weight": 50,
-    "max_consecutive_work_days": 7,
     "max_time_seconds": 10
   }
 }
 ```
 
-### 响应体关键字段
+#### by-plan 响应体
+
+```json
+{
+  "success": true,
+  "message": "排产计算完成（所有产线）",
+  "num_lines": 2,
+  "line_results": [
+    {
+      "line_id": 1,
+      "line_name": "产线A",
+      "success": true,
+      "solver_status": "OPTIMAL",
+      "solve_time": 1.234,
+      "total_production_days": 25,
+      "rest_days_occupied": 0,
+      "num_products": 2,
+      "daily_results": [...],
+      "product_stats": [...]
+    },
+    {
+      "line_id": 2,
+      "line_name": "产线B",
+      "success": true,
+      "solver_status": "OPTIMAL",
+      "solve_time": 0.987,
+      "total_production_days": 20,
+      "rest_days_occupied": 0,
+      "num_products": 1,
+      "daily_results": [...],
+      "product_stats": [...]
+    }
+  ]
+}
+```
+
+### 响应体关键字段（单产线排产结果）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -314,16 +370,17 @@ delivery_plans ──1:N──> plan_materials ──N:1──> line_products
 | 前端显示 | 默认值 | 可选范围 | 对应后端字段 | 映射规则 |
 |---------|--------|---------|------------|---------|
 | 规避休息日上班权重 | 50 | 0~100（每10一档） | `rest_day_weight` | 直接等于 |
-| 最大连续工作天数 | 7 | 3~14天（每1天一档） | `max_consecutive_work_days` | 直接等于 |
-| 求解限时 | 10s | 10~60s（每10秒一档） | `max_time_seconds` | 直接等于 |
+| 求解限时 | 30s | 10~60s（每10秒一档，仅在调试模式显示） | `max_time_seconds` | 直接等于 |
 
 ## 算法说明
 
 使用 Google OR-Tools CP-SAT 约束求解器，单阶段优化目标函数，多线程并行搜索（`num_workers = min(8, cpu_count)`）。
 
+多条产线时，**每条产线各自独立运行一次求解器**，产线之间不共享约束。
+
 ### 多物料共享产线模型
 
-- **一条产线**同时生产 **1~6 个物料**，每天最多 **24 小时**（= 3.0 班，每班 8 小时）
+- **一条产线**同时生产 **多个物料**，每天最多 **24 小时**（= 3.0 班，每班 8 小时）
 - 最小分配单位 **4 小时**（= 0.5 班）
 - 每个物料各有一个 **combo** 变量（0~5），各自独立决定当天的前后班次组合
 - 所有物料的总工时 ≤ 24h（`sum(shift_i) ≤ 3.0` 班）
@@ -347,10 +404,10 @@ delivery_plans ──1:N──> plan_materials ──N:1──> line_products
 - **24h 共享工时约束**：`sum(shift_i) ≤ 3.0`（= 24h），每天所有物料的总工时不能超过 24h
 - **库存平衡约束**：每个物料各自独立，每日结存库存 = 前日结存 + 当日产量 - 当日交货
 - **库存安全约束**：每个物料各自独立，每日结存库存 ≥ 安全库存
-- **连续工作约束**：不允许产线连续运行超过 `max_consecutive_work_days` 天（产线级别硬约束，任一物料生产即算产线运行）
 - **可行性校验**（求解前预检查）：
-  - 每个物料单独校验：最大产能 ≥ 净需求
-  - 所有物料合计校验：总最大产能 ≥ 合计净需求
+  - 每个物料单独校验：最大产能 ≥ 净需求（按班次维度计算）
+  - 每日前缀累积校验：前 k 天最大产能 ≥ 前 k 天累积净需求
+  - 所有物料合计校验：总所需班次 ≤ 总可用班次 × 3% 容差
 
 ### 目标函数
 
@@ -361,7 +418,7 @@ delivery_plans ──1:N──> plan_materials ──N:1──> line_products
 | 过量生产惩罚 | 1 | 否 | **物料级**（求和） | 防止无限过量生产，每个物料各自计算 `期末库存-安全库存` 后加总 |
 | 占用休息日惩罚 | 用户值×2 | 是（默认50） | **产线级**（共享） | 休息日产线有任一物料生产即计为 1 次占用 |
 | 产量平滑惩罚 | 5 | 否 | **物料级**（求和） | 相邻两天 combo 等级差的绝对值之和，各物料独立计算后加总 |
-| 长连续工作惩罚 | 60 | 否 | **产线级**（共享） | 连续工作 `max_consecutive_work_days-1` 天的窗口数（窗口长度为 `max_consecutive_work_days-1`，全为工作日时计数+1） |
+| 长连续工作惩罚 | 60 | 否 | **产线级**（共享） | 任意连续 7 天全部为工作日时计数+1（产线级别，窗口长度固定为 7 天） |
 
 #### 惩罚粒度说明
 
@@ -411,8 +468,8 @@ delivery_plans ──1:N──> plan_materials ──N:1──> line_products
 
 排产计算页面提供 🛠 **调试模式** 切换按钮。开启后，排产结果上方会显示求解器调试面板，包含：
 
-- **求解器状态**：`OPTIMAL`（绿色）或 `FEASIBLE`（黄色）
-- **求解耗时**：精确到毫秒级
+- **产线状态**：每条产线的求解器状态（`OPTIMAL` 绿色 / `FEASIBLE` 黄色）和耗时
+- **求解限时**：10~60 秒范围调节
 
 ### 前端校验
 
@@ -423,7 +480,7 @@ delivery_plans ──1:N──> plan_materials ──N:1──> line_products
 - 总交货量自动计算
 - 重复物料检测
 - 至少需要 1 个物料
-- 物料必须属于所选产线
+- 系统自动匹配产线，如物料不在任何产线中则提示无法创建
 
 ## 版本变更
 
@@ -433,3 +490,5 @@ delivery_plans ──1:N──> plan_materials ──N:1──> line_products
 | V2.0 | **双物料共享单产线**，每天 24h 工时竞争，独立库存/产量/交货，删除加班惩罚 |
 | V2.1 | 前端重构为四页面 + 左侧导航栏，后端集成 MySQL 持久化，交货计划支持每日交货量输入，Excel 导出，数据库自动迁移 |
 | V2.1.1 | **数据结构重构**：响应体字段从动态后缀格式（`total_production_days_1`/`_2`）改为数组结构（`product_stats[]`/`daily_results[].products[]`），交货计划物料数从强制 2 个改为 1~6 个，支持任意数量物料 |
+| V2.2 | **多产线支持**：交货计划自动拆分到多条产线；新增 `plan_lines` 关联表；排产计算按产线独立运行并聚合结果；前端按产线+物料切换查看结果；**算法改进**：贪心集合覆盖选线+产能感知分配+整数拆分；**去除物料上限**：交货计划物料数无上限；**产线自动匹配**：创建计划时自动匹配产线；**产能校验**：添加每日前缀累积校验和班次维度总产能校验；**连续工作优化**：去掉硬约束保留软约束，惩罚窗口固定为 7 天；**求解限时**：移至调试模式下方 |
+| V2.2.1 | **过载拆分增强**：拆分时初期库存和安全库存按比例分配至各产线（plan_materials 新增 safety_stock 字段持久化），拆分比受目标产线单物料最大产能约束；**物料分配优化**：候选产线按剩余容量排序（同容量按额定产量降序），过载产线天然被绕开；**超额班次修正**：excess_shift_reduction 从 delivery/rated 改为 movable_ratio × total_shifts，与净需求计算对齐 |

@@ -3,7 +3,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, L
 
 const MATERIAL_COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2']
 
-export default function ResultCharts({ result, activeProductIdx = 0, materials = [] }) {
+export default function ResultCharts({ result, activeProductIdx = 0, materials = [], lineName = '' }) {
   if (!result || !result.daily_results || result.daily_results.length === 0) return null
 
   const [overviewIdx, setOverviewIdx] = useState(0)
@@ -47,11 +47,12 @@ export default function ResultCharts({ result, activeProductIdx = 0, materials =
   }
 
   const stats = productStats[overviewIdx] || {}
+  const linePrefix = lineName ? `${lineName} - ` : ''
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' }}>
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid #e5e7eb' }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#1f2937' }}>📈 {productName} 每日产量趋势</h4>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#1f2937' }}>📈 {linePrefix}{productName} 每日产量趋势</h4>
         <ResponsiveContainer width="100%" height={250}>
           <LineChart data={outputData}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -66,7 +67,7 @@ export default function ResultCharts({ result, activeProductIdx = 0, materials =
       </div>
 
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid #e5e7eb' }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#1f2937' }}>📦 {productName} 库存变化趋势</h4>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#1f2937' }}>📦 {linePrefix}{productName} 库存变化趋势</h4>
         <ResponsiveContainer width="100%" height={250}>
           <LineChart data={inventoryData}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -81,7 +82,7 @@ export default function ResultCharts({ result, activeProductIdx = 0, materials =
       </div>
 
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid #e5e7eb' }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#1f2937' }}>⚙️ 每日工时分配 (上限 24h)</h4>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#1f2937' }}>⚙️ {linePrefix}每日工时分配 (上限 24h)</h4>
         <ResponsiveContainer width="100%" height={250}>
           <BarChart data={shiftData}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -97,7 +98,7 @@ export default function ResultCharts({ result, activeProductIdx = 0, materials =
 
       <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid #e5e7eb' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <h4 style={{ margin: 0, fontSize: '14px', color: '#1f2937' }}>📊 方案统计概览</h4>
+          <h4 style={{ margin: 0, fontSize: '14px', color: '#1f2937' }}>📊 {linePrefix}方案统计概览</h4>
           {numProducts > 1 && (
             <select
               value={overviewIdx}

@@ -58,7 +58,7 @@ export default function MaterialManagement() {
             </div>
             <div>
               <label style={labelStyle}>安全库存</label>
-              <input type="number" style={inputStyle} value={form.safety_stock} onChange={e => setForm({ ...form, safety_stock: parseFloat(e.target.value) || 0 })} />
+              <input type="number" style={inputStyle} value={form.safety_stock || ''} onChange={e => setForm({ ...form, safety_stock: parseFloat(e.target.value) || 0 })} placeholder="0" />
             </div>
           </div>
           <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
